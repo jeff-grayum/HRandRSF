@@ -1,0 +1,131 @@
+---
+title: "Home rang and resource selection."
+author: "Jeff Grayum"
+date: '2023-01-09'
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Loading libraries.
+```{r}
+library(tidyverse)
+library(scales)
+library(ggthemes)
+library(readxl)
+library(janitor)
+library(lubridate)
+library(adehabitatHR)
+library(magrittr)
+library(gitcreds)
+library(sf)
+library(raster)
+library(RColorBrewer)
+```
+
+Importing data, cleaning, and creating spatial point data frame.
+```{r}
+#Importing data, making names snake_case
+winter_locs <- read_excel("/Users/jeffgrayum/Documents/BobwhiteData/BobwhiteData 2/All_Winter_Locs_Oct_2021_Traps.xlsx") %>%
+  clean_names()
+
+#Selecting birds with only 30+ observations
+splst <- winter_locs %>%
+  group_by(band_numb) %>%
+  summarize(n = n()) %>%
+  arrange(n) %>%
+  filter(n > 30) %>%
+  dplyr::select(band_numb) %>%
+  extract2(1) %>%
+  as.character() 
+
+#"SampleSize_winter_locs"
+SS_winter_locs <- winter_locs %>%
+  filter(band_numb %in% splst) %>%
+  droplevels()
+
+#Exporting as .csv, just in case I need it later.
+write.csv(SS_winter_locs,"/Users/jeffgrayum/Downloads/SS_winter_locs.csv", row.names = FALSE)
+
+#Verifying only birds with 30+ obs are included in data frame
+SS_winter_locs %>%
+  count(band_numb)
+
+#Definining projection for Spatial Points Data Frame (SPDF) as NAD 1983 16N
+prj <- '+init=epsg:26916'
+CRS("+init=epsg:26916")
+
+#Create the SPDF
+SS_winter_locs_SPDF<- SpatialPointsDataFrame(coordinates(cbind(SS_winter_locs$easting, SS_winter_locs$northing)), data = SS_winter_locs, proj4string = CRS(prj))
+```
+
+Importing shapefiles and raster layers of study site.
+```{r}
+#Shapefile of study site.
+SF_StudySite <- st_read("/Users/jeffgrayum/Downloads/2021_quail_prj", crs = "+proj=longlat +datum=NAD83")
+
+#Verifying datum
+crs(SF_StudySite)
+
+#Plotting SPDF over Shapefile. These can be plotted in reverse order for view of entire study site.
+plot(SS_winter_locs_SPDF)
+plot(SF_StudySite, add = TRUE)
+
+
+
+#Importing raster layer of study site. Includes land cover layer for RSF.
+Raster_StudySite <- raster("/Users/jeffgrayum/Documents/qGIS/LCovRaster.tiff")
+
+#Veryfing datum
+crs(Raster_StudySite)
+
+#Plotting SPDF over raster layer. Again, these can be plotted in reverse order for view of entire study site.
+plot(SS_winter_locs_SPDF)
+plot(Raster_StudySite, alpha = 0.5, add = TRUE)
+```
+
+Minimum Convex Polygon (MCP) home ranges.
+```{r}
+#We'll plot a MCP HR for each bird, based on band number [, 7] 
+#Verifying band number is in column 7.
+SS_winter_locs_SPDF[, 7]
+
+#Creating MCP for each bobwhite.
+mcp_hr <- mcp((SS_winter_locs_SPDF[, 7]))
+
+#Plotting HR, adding observed locationa, adding shapefile of study site.
+plot(mcp_hr)
+plot(SS_winter_locs_SPDF, col = as.data.frame(SS_winter_locs_SPDF)[,7], add = TRUE)
+plot(SF_StudySite, add = TRUE)
+
+#Looking at size of home range (in hectares)
+as.data.frame(mcp_hr)
+
+#Calculating home range size across levels/utilization distributions (i.e., 50%, 90%)
+#First, we have to adjust plot margins (large plot)
+par(mar = c(1, 1, 1, 1))
+across_levels <- mcp.area(SS_winter_locs_SPDF[,7])
+```
+
+Kernel Density Estimates of home range.
+```{r}
+#Creating KDE HRs
+kde_hr <- kernelUD(SS_winter_locs_SPDF[, 7])
+
+#Side-by-side image of all bobwhite HRs
+image(kde_hr)
+
+#Mapping KDE home ranges onto study site at a 90% UD
+kde_hr_ud <- plot(getverticeshr(kde_hr, percent = 90))
+plot(Raster_StudySite, alpha = 0.5, add = TRUE)
+plot(SS_winter_locs_SPDF, add = TRUE)
+
+#Looking at a data frame of KDE HR sizes across various utilization distributions (e.g, 50%, 90%)
+kernel.area(kde_hr) %>%
+  view()
+```
+
