@@ -27,14 +27,17 @@ library(raster)
 library(RColorBrewer)
 ```
 
-Importing data, cleaning, and creating spatial point data frame.
+Importing winter 2021/22 data, cleaning, filtering (30+ obs), and creating Spatial Point Data Frame.
 ```{r}
 #Importing data, making names snake_case
-winter_locs <- read_excel("/Users/jeffgrayum/Documents/BobwhiteData/BobwhiteData 2/All_Winter_Locs_Oct_2021_Traps.xlsx") %>%
+winter_2021_22_locs <- read_excel("/Users/jeffgrayum/Documents/BobwhiteData/BobwhiteData 2/All_Winter_Locs_Oct_2021_Traps.xlsx") %>%
   clean_names()
 
-#Selecting birds with only 30+ observations
-splst <- winter_locs %>%
+winter_2021_22_locs %>%
+  view()
+
+#Making list of birds with 30+ observations
+samp_list <- winter_2021_22_locs %>%
   group_by(band_numb) %>%
   summarize(n = n()) %>%
   arrange(n) %>%
@@ -43,89 +46,207 @@ splst <- winter_locs %>%
   extract2(1) %>%
   as.character() 
 
-#"SampleSize_winter_locs"
-SS_winter_locs <- winter_locs %>%
-  filter(band_numb %in% splst) %>%
+#Filtering spreadsheet; only including birds from samp_list --> "SampleSize_winter_locs" 
+SS_winter_2021_22_locs <- winter_2021_22_locs %>%
+  filter(band_numb %in% samp_list) %>%
   droplevels()
 
 #Exporting as .csv, just in case I need it later.
-write.csv(SS_winter_locs,"/Users/jeffgrayum/Downloads/SS_winter_locs.csv", row.names = FALSE)
+write.csv(SS_winter_locs,"/Users/jeffgrayum/Downloads/SS_winter_locs_2021_22.csv", row.names = FALSE)
 
 #Verifying only birds with 30+ obs are included in data frame
-SS_winter_locs %>%
+SS_winter_2021_22_locs %>%
   count(band_numb)
 
-#Definining projection for Spatial Points Data Frame (SPDF) as NAD 1983 16N
+#Definining projection for Spatial Points Data Frame (SPDF) as NAD 1983 16N 
 prj <- '+init=epsg:26916'
 CRS("+init=epsg:26916")
 
-#Create the SPDF
-SS_winter_locs_SPDF<- SpatialPointsDataFrame(coordinates(cbind(SS_winter_locs$easting, SS_winter_locs$northing)), data = SS_winter_locs, proj4string = CRS(prj))
+#Create the SPDF --> This let's R know we're dealing with spatial data, and associates coordinates with all obs in the row. My coords are stored in columns "easting" and "northing".
+SS_winter_2021_22_locs_SPDF <- SpatialPointsDataFrame(coordinates(cbind(SS_winter_2021_22_locs$easting, SS_winter_2021_22_locs$northing)), data = SS_winter_2021_22_locs, proj4string = CRS(prj))
 ```
 
-Importing shapefiles and raster layers of study site.
+Importing shapefiles and raster layers of study site. Looking at Winter 2021/22 locations.
 ```{r}
 #Shapefile of study site.
-SF_StudySite <- st_read("/Users/jeffgrayum/Downloads/2021_quail_prj", crs = "+proj=longlat +datum=NAD83")
+SF_StudySite <- st_read("/Users/jeffgrayum/Downloads/2021_quail_prj", crs = "+init=epsg:26916")
 
 #Verifying datum
 crs(SF_StudySite)
 
 #Plotting SPDF over Shapefile. These can be plotted in reverse order for view of entire study site.
-plot(SS_winter_locs_SPDF)
+plot(SS_winter_locs__2021_22_SPDF)
 plot(SF_StudySite, add = TRUE)
 
 
 
 #Importing raster layer of study site. Includes land cover layer for RSF.
-Raster_StudySite <- raster("/Users/jeffgrayum/Documents/qGIS/LCovRaster.tiff")
+Raster_StudySite <- raster("/Users/jeffgrayum/Documents/qGIS/LCovRaster.tiff", crs = "+init=epsg:26916")
 
-#Veryfing datum
+#Verifying datum
 crs(Raster_StudySite)
 
 #Plotting SPDF over raster layer. Again, these can be plotted in reverse order for view of entire study site.
-plot(SS_winter_locs_SPDF)
+plot(SS_winter_2021_22_locs_SPDF)
 plot(Raster_StudySite, alpha = 0.5, add = TRUE)
 ```
 
-Minimum Convex Polygon (MCP) home ranges.
+Evaluating Winter 2021/22 minimum convex polygon (MCP) home ranges for each bobwhite.
 ```{r}
-#We'll plot a MCP HR for each bird, based on band number [, 7] 
-#Verifying band number is in column 7.
-SS_winter_locs_SPDF[, 7]
+#We'll plot a MCP HR for each bird, making a home range for each band number (stored in column 7) [, 7] 
+#Verifying band number is actually in column 7.
+SS_winter_2021_22_locs_SPDF[, 7]
 
 #Creating MCP for each bobwhite.
-mcp_hr <- mcp((SS_winter_locs_SPDF[, 7]))
+mcp_hr_winter_2021_22 <- mcp((SS_winter_2021_22_locs_SPDF[, 7]))
 
-#Plotting HR, adding observed locationa, adding shapefile of study site.
-plot(mcp_hr)
-plot(SS_winter_locs_SPDF, col = as.data.frame(SS_winter_locs_SPDF)[,7], add = TRUE)
-plot(SF_StudySite, add = TRUE)
+#Plotting HR, adding observed locations, adding shapefile of study site.
+plot(mcp_hr_winter_2021_22)
+plot(SS_winter_2021_22_locs_SPDF, col = as.data.frame(SS_winter_2021_22_locs_SPDF)[,7], add = TRUE)
+#Below, we can add Raster_StudySite or SF_StudySite
+plot(SF_StudySite, add = TRUE, alpha = 0.5)
 
-#Looking at size of home range (in hectares)
-as.data.frame(mcp_hr)
+#Looking at size of home range (in hectares) for each bobwhite
+as.data.frame(mcp_hr_winter_2021_22)
 
 #Calculating home range size across levels/utilization distributions (i.e., 50%, 90%)
 #First, we have to adjust plot margins (large plot)
 par(mar = c(1, 1, 1, 1))
-across_levels <- mcp.area(SS_winter_locs_SPDF[,7])
+#Then, we can plot home range sizes for different Utilization Distributions
+across_levels <- mcp.area(SS_winter_2021_22_locs_SPDF[,7])
 ```
 
-Kernel Density Estimates of home range.
+Creating kernel density estimates (KDEs) of Winter 2021/22 home ranges for each bobwhite.
 ```{r}
 #Creating KDE HRs
-kde_hr <- kernelUD(SS_winter_locs_SPDF[, 7])
+kde_hr_winter_2021_22 <- kernelUD(SS_winter_2021_22_locs_SPDF[, 7])
 
-#Side-by-side image of all bobwhite HRs
-image(kde_hr)
+#Side-by-side image of all bobwhite HRs. Kind of silly.
+image(kde_hr_winter_2021_22)
 
 #Mapping KDE home ranges onto study site at a 90% UD
-kde_hr_ud <- plot(getverticeshr(kde_hr, percent = 90))
+kde_hr_ud <- plot(getverticeshr(kde_hr_winter_2021_22, percent = 90))
+
+#We can add either Raster_StudySite or SF_StudySite below.
 plot(Raster_StudySite, alpha = 0.5, add = TRUE)
-plot(SS_winter_locs_SPDF, add = TRUE)
+plot(SS_winter_2021_22_locs_SPDF, add = TRUE)
 
 #Looking at a data frame of KDE HR sizes across various utilization distributions (e.g, 50%, 90%)
-kernel.area(kde_hr) %>%
+kernel.area(kde_hr_winter_2021_22) %>%
   view()
 ```
+
+
+Repeating the process with Summer 2022 locations.
+Importing data, cleaning, filtering (30+ obs), creating Spatial Points Data Frame
+```{r}
+#Importing data, making names snake_case
+summer_2022_locs <- read_excel("/Users/jeffgrayum/Documents/BobwhiteData/ALL_LOCS_SUMMER_2022.xlsx") %>%
+  clean_names()
+
+summer_2022_locs %>%
+  view()
+
+#Making list of birds with 30+ observations
+samp_list_summer_2022 <- summer_2022_locs %>%
+  group_by(band_numb) %>%
+  summarize(n = n()) %>%
+  arrange(n) %>%
+  filter(n > 30) %>%
+  dplyr::select(band_numb) %>%
+  extract2(1) %>%
+  as.character() 
+
+#Filtering spreadsheet; only including birds from samp_list --> "SampleSize_winter_locs" 
+SS_summer_2022_locs <- summer_2022_locs %>%
+  filter(band_numb %in% samp_list_summer_2022) %>%
+  droplevels()
+
+#Exporting as .csv, just in case I need it later.
+#write.csv(SS_summer_2022_locs,"/Users/jeffgrayum/Downloads/SS_summer_2022_locs.csv", row.names = FALSE)
+
+#Verifying only birds with 30+ obs are included in data frame
+SS_summer_2022_locs %>%
+  count(band_numb, sort = TRUE)
+
+#Definining projection for Spatial Points Data Frame (SPDF) as NAD 1983 16N 
+prj <- '+init=epsg:26916'
+CRS("+init=epsg:26916")
+
+#Create the SPDF --> This let's R know we're dealing with spatial data, and associates coordinates with all obs in the row. My coords are stored in columns "easting" and "northing".
+SS_summer_2022_locs_SPDF <- SpatialPointsDataFrame(coordinates(cbind(SS_summer_2022_locs$easting, SS_summer_2022_locs$northing)), data = SS_summer_2022_locs, proj4string = CRS(prj))
+```
+
+Importing shapefiles and raster layers, looking at Summer 2022 locations.
+```{r}
+#Shapefile of study site.
+SF_StudySite <- st_read("/Users/jeffgrayum/Downloads/2021_quail_prj", crs = "+init=epsg:26916")
+
+#Verifying datum
+crs(SF_StudySite)
+
+#Plotting SPDF over Shapefile. These can be plotted in reverse order for view of entire study site.
+plot(SS_summer_2022_locs_SPDF)
+plot(SF_StudySite, add = TRUE)
+
+
+
+#Importing raster layer of study site. Includes land cover layer for RSF.
+Raster_StudySite <- raster("/Users/jeffgrayum/Documents/qGIS/LCovRaster.tiff", crs = "+init=epsg:26916")
+
+#Verifying datum
+crs(Raster_StudySite)
+
+#Plotting SPDF over raster layer. Again, these can be plotted in reverse order for view of entire study site.
+plot(SS_summer_2022_locs_SPDF)
+plot(Raster_StudySite, alpha = 0.5, add = TRUE)
+```
+
+Evaluating Summer 2022 minimum convex polygon (MCP) home ranges for each bobwhite.
+```{r}
+#We'll plot a MCP HR for each bird, making a home range for each band number (stored in column 7) [, 7] 
+#Verifying band number is actually in column 7.
+SS_summer_2022_locs_SPDF[, 7]
+
+#Creating MCP for each bobwhite.
+mcp_hr_summer_2022 <- mcp((SS_summer_2022_locs_SPDF[, 7]))
+
+#Plotting HR, adding observed locations, adding shapefile of study site.
+plot(mcp_hr_summer_2022)
+plot(SS_summer_2022_locs_SPDF, col = as.data.frame(SS_summer_2022_locs_SPDF)[,7], add = TRUE)
+#Below, we can add Raster_StudySite or SF_StudySite
+plot(SF_StudySite, add = TRUE, alpha = 0.5)
+
+#Looking at size of home range (in hectares) for each bobwhite
+as.data.frame(mcp_hr_summer_2022)
+
+#Calculating home range size across levels/utilization distributions (i.e., 50%, 90%)
+#First, we have to adjust plot margins (large plot)
+par(mar = c(1, 1, 1, 1))
+#Then, we can plot home range sizes for different Utilization Distributions
+across_levels <- mcp.area(SS_summer_2022_locs_SPDF[,7])
+```
+
+Creating kernel density estimates (KDEs) of Summer 2022 home ranges for each bobwhite.
+```{r}
+#Creating KDE HRs
+kde_hr_summer_2022 <- kernelUD(SS_summer_2022_locs_SPDF[, 7])
+
+#Side-by-side image of all bobwhite HRs.
+image(kde_hr_summer_2022)
+
+#Mapping KDE home ranges onto study site at a 90% UD
+kde_hr_ud <- plot(getverticeshr(kde_hr_summer_2022, percent = 90))
+
+#We can add either Raster_StudySite or SF_StudySite below.
+plot(SF_StudySite, add = TRUE)
+plot(SS_summer_2022_locs_SPDF, add = TRUE)
+
+#Looking at a data frame of KDE HR sizes across various utilization distributions (e.g, 50%, 90%)
+kernel.area(kde_hr_summer_2022) %>%
+  view()
+```
+
+
+
 
