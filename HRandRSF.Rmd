@@ -216,54 +216,83 @@ summary(hr_size_ha$hr_size_ha)
 
 #Let's look at availability of of each land cover type for bobwhite with relative small hr
 #Filtering for NOBO in first quartile.
-small_hr <- wint_avail_and_selection %>%
+first_quartile <- wint_avail_and_selection %>%
   filter(hr_size <= 6.724)
 
 #Bar chart of availability.
-small_hr %>%
+first_quartile %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
   ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
   geom_col() +
   geom_point(mapping = aes(x = lcov, y = percent_observations/100), shape = 3) +
   scale_y_continuous(labels = percent) +
   labs(x = "Land cover", 
        y = "Percent of available/selected land cover",
-       title = "Available vs selected landcover for bobwhite with small home ranges") +
+       title = "Available vs selected landcover for bobwhite with small home ranges",
+       subtitle = "Columns show availability, plus signs show use") +
   theme_minimal() +
   scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
   facet_wrap(~band_numb)
 
 #Looking at availability for mid-sized HR.
-
-med_hr <- wint_mcp_percent_lcov_clean %>%
+second_quartile <- wint_avail_and_selection %>%
   filter(hr_size > 6.724,
-         hr_size < 13.326) %>%
+         hr_size <=9.147 ) %>%
   view()
 
 #Bar chart of small home ranges
-med_hr %>%
-  ggplot(aes(lcov, percent_hab/100, fill = lcov)) +
+second_quartile %>%
+  mutate(lcov = fct_relevel(lcov, c("AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
   geom_col() +
-  facet_wrap(~ band_numb) +
+  geom_point(mapping = aes(x = lcov, y = percent_observations/100), shape = 3) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Percent of available/selected land cover",
+       title = "Available vs selected landcover for bobwhite with medium-small home ranges",
+       subtitle = "Columns show availability, plus signs show use") +
   theme_minimal() +
-  labs(x = "Land cover",
-       y = "Availability",
-       title = "Land cover availability for NOBO with medium-sized home ranges") +
-  scale_y_continuous(labels = percent) 
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080", "PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb) 
 
 #Looking at availability for large home ranges
-large_hr <- wint_mcp_percent_lcov_clean %>%
-  filter(hr_size >= 13.326) %>%
+third_quartile <- wint_avail_and_selection %>%
+  filter(hr_size > 9.147, 
+         hr_size <= 13.326) %>%
   view()
 
-large_hr %>%
-  ggplot(aes(lcov, percent_hab/100, fill = lcov)) +
+third_quartile %>%
+    mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
   geom_col() +
-  facet_wrap(~ band_numb) +
+  geom_point(mapping = aes(x = lcov, y = percent_observations/100), shape = 3) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Percent of available/selected land cover",
+       title = "Available vs selected landcover for bobwhite with med-large home ranges",
+       subtitle = "Columns show availability, plus signs show use") +
   theme_minimal() +
-  labs(x = "Land cover",
-       y = "Availability",
-       title = "Land cover availability for NOBO with large home ranges") +
-  scale_y_continuous(labels = percent) 
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+fourth_quartile <- wint_avail_and_selection %>%
+  filter(hr_size > 13.326) %>%
+  view()
+
+fourth_quartile %>%
+    mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
+  geom_col() +
+  geom_point(mapping = aes(x = lcov, y = percent_observations/100), shape = 3) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Percent of available/selected land cover",
+       title = "Available vs selected landcover for bobwhite with large home ranges",
+       subtitle = "Columns show availability, plus signs show use") +
+  theme_minimal() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
 ```
 
 
