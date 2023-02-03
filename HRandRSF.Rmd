@@ -116,6 +116,157 @@ par(mar = c(1, 1, 1, 1))
 across_levels <- mcp.area(SS_winter_2021_22_locs_SPDF[,7])
 ```
 
+Now, looking at percent of each land cover type within each bobwhite's MCP (availability).
+Importhing spreadsheets (made with ArcGIS), cleaning names.
+```{r}
+#Importing sprreadsheet of landcover availability within MCP home range.
+wint_mcp_percent_lcov <- read_excel("/Users/jeffgrayum/Downloads/WintMCP_Habitat_Percent.xlsx")
+
+#Taking a quick look.
+wint_mcp_percent_lcov %>%
+  view()
+
+#Shortening names of each land cover type. Changing column names.
+wint_mcp_percent_lcov_clean <- wint_mcp_percent_lcov %>% 
+  mutate(HABITAT = ifelse(HABITAT == "AGRICULTURAL", "AG", 
+                         ifelse(HABITAT == "WILDLIFE FOOD PLOT", "WFP", 
+                                ifelse(HABITAT == "HARDWOOD", "HW", 
+                                       ifelse(HABITAT == "PINE/HARDWOOD", "P_H", 
+                                              ifelse(HABITAT == "HARDWOOD/PINE FOREST", "H_P", 
+                                                     ifelse(HABITAT == "WETLAND", "WL", 
+                                                            ifelse(HABITAT == "SHRUB/SCRUB", "S_S", 
+                                                                   ifelse(HABITAT == "URBAN/MOWED", "MOW", 
+                                                                          ifelse(HABITAT == "PINE PLANTATION", "PP", 
+                                                                                 ifelse(HABITAT == "NATURAL PINE", "NP", HABITAT))))))))))) %>%
+    rename(LCOV = HABITAT,
+           HR_Size = Hectares,
+           ha_of_lcov = Hab_Hectar) %>%
+  clean_names()
+
+#Does it look better? I believe so.
+wint_mcp_percent_lcov_clean %>% 
+  view()
+
+#Importing spreadsheet of landcover type of recorded locations (selection)
+wint_selection <- read_excel("/Users/jeffgrayum/Downloads/AllWinterLocs_ObsHabitat.xlsx") %>%
+  view()
+
+#Cleaning names, so they match availability spreadsheet.
+wint_selection_clean <- wint_selection %>%
+   mutate(HABITAT = ifelse(HABITAT == "AGRICULTURAL", "AG", 
+                         ifelse(HABITAT == "WILDLIFE FOOD PLOT", "WFP", 
+                                ifelse(HABITAT == "HARDWOOD", "HW", 
+                                       ifelse(HABITAT == "PINE/HARDWOOD", "P_H", 
+                                              ifelse(HABITAT == "HARDWOOD/PINE FOREST", "H_P", 
+                                                     ifelse(HABITAT == "WETLAND", "WL", 
+                                                            ifelse(HABITAT == "SHRUB/SCRUB", "S_S", 
+                                                                   ifelse(HABITAT == "URBAN/MOWED", "MOW", 
+                                                                          ifelse(HABITAT == "PINE PLANTATION", "PP", 
+                                                                                 ifelse(HABITAT == "NATURAL PINE", "NP", HABITAT))))))))))) %>%
+    rename(LCOV = HABITAT) %>%
+  clean_names()
+
+#Does it match (It does)
+wint_selection_clean %>%
+  view()
+
+percent_of_obs_in_lcov <- wint_selection_clean %>%
+  count(band_numb, lcov) %>%
+  group_by(band_numb) %>%
+  mutate(percent_observations = 100 * n / sum(n)) %>%
+  view()
+
+#Tryng to combine both spreadsheets, so we have percent availability and percent recorded obs together.
+wint_avail_and_selection <- merge(wint_mcp_percent_lcov_clean, percent_of_obs_in_lcov, by = c("band_numb", "lcov"), all.x = TRUE) %>%
+  view()
+
+#Making this look better.
+wint_avail_and_selection <- wint_avail_and_selection %>%
+  rename(percent_lcov_avail = percent_hab,
+         n_obs = n) 
+
+  
+#Filling NAs
+  wint_avail_and_selection  <- wint_avail_and_selection %>%
+    mutate(n_obs = replace_na(n_obs, 0),
+           percent_observations = replace_na(percent_observations, 0))
+  
+           
+```
+
+Summarizing some date from winter 2021/22 land cover availability, some exploratory analysis.
+```{r}
+#Creating a spreadsheet of home range sizes for each bobwhite. Awkward but effective method.
+hr_size_ha <- wint_mcp_percent_lcov_clean %>%
+  group_by(band_numb) %>%
+  summarize(hr_size_ha = mean(hr_size)) %>%
+  view()
+
+#Boxplot of hr sizes
+hr_size_ha %>%
+  ggplot(aes(x = "", y = hr_size_ha)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(x = "",
+       y = "Home range size (ha)",
+       title = "MCP home range sizes (ha) of NOBO at The Jones Center ")
+
+#5 number summary of home range sizes.
+summary(hr_size_ha$hr_size_ha)
+
+#Let's look at availability of of each land cover type for bobwhite with relative small hr
+#Filtering for NOBO in first quartile.
+small_hr <- wint_avail_and_selection %>%
+  filter(hr_size <= 6.724)
+
+#Bar chart of availability.
+small_hr %>%
+  ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
+  geom_col() +
+  geom_point(mapping = aes(x = lcov, y = percent_observations/100), shape = 3) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Percent of available/selected land cover",
+       title = "Available vs selected landcover for bobwhite with small home ranges") +
+  theme_minimal() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+#Looking at availability for mid-sized HR.
+
+med_hr <- wint_mcp_percent_lcov_clean %>%
+  filter(hr_size > 6.724,
+         hr_size < 13.326) %>%
+  view()
+
+#Bar chart of small home ranges
+med_hr %>%
+  ggplot(aes(lcov, percent_hab/100, fill = lcov)) +
+  geom_col() +
+  facet_wrap(~ band_numb) +
+  theme_minimal() +
+  labs(x = "Land cover",
+       y = "Availability",
+       title = "Land cover availability for NOBO with medium-sized home ranges") +
+  scale_y_continuous(labels = percent) 
+
+#Looking at availability for large home ranges
+large_hr <- wint_mcp_percent_lcov_clean %>%
+  filter(hr_size >= 13.326) %>%
+  view()
+
+large_hr %>%
+  ggplot(aes(lcov, percent_hab/100, fill = lcov)) +
+  geom_col() +
+  facet_wrap(~ band_numb) +
+  theme_minimal() +
+  labs(x = "Land cover",
+       y = "Availability",
+       title = "Land cover availability for NOBO with large home ranges") +
+  scale_y_continuous(labels = percent) 
+```
+
+
 Creating kernel density estimates (KDEs) of Winter 2021/22 home ranges for each bobwhite.
 ```{r}
 #Creating KDE HRs
@@ -167,7 +318,8 @@ SS_summer_2022_locs <- summer_2022_locs %>%
 
 #Verifying only birds with 30+ obs are included in data frame
 SS_summer_2022_locs %>%
-  count(band_numb, sort = TRUE)
+  count(band_numb, sort = TRUE) %>%
+  view()
 
 #Definining projection for Spatial Points Data Frame (SPDF) as NAD 1983 16N 
 prj <- '+init=epsg:26916'
