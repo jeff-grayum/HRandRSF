@@ -126,7 +126,7 @@ wint_mcp_percent_lcov <- read_excel("/Users/jeffgrayum/Downloads/WintMCP_Habitat
 wint_mcp_percent_lcov %>%
   view()
 
-#Shortening names of each land cover type. Changing column names.
+#Shortening names of each land cover type. Changing column names. Cleaning names.
 wint_mcp_percent_lcov_clean <- wint_mcp_percent_lcov %>% 
   mutate(HABITAT = ifelse(HABITAT == "AGRICULTURAL", "AG", 
                          ifelse(HABITAT == "WILDLIFE FOOD PLOT", "WFP", 
@@ -147,7 +147,7 @@ wint_mcp_percent_lcov_clean <- wint_mcp_percent_lcov %>%
 wint_mcp_percent_lcov_clean %>% 
   view()
 
-#Importing spreadsheet of landcover type of recorded locations (selection)
+#Importing spreadsheet of recorded locations with land cover type (selection)
 wint_selection <- read_excel("/Users/jeffgrayum/Downloads/AllWinterLocs_ObsHabitat.xlsx") %>%
   view()
 
@@ -170,13 +170,14 @@ wint_selection_clean <- wint_selection %>%
 wint_selection_clean %>%
   view()
 
+#Adding column recording percent of obs (for each bobwhite) in each land cover type.
 percent_of_obs_in_lcov <- wint_selection_clean %>%
   count(band_numb, lcov) %>%
   group_by(band_numb) %>%
   mutate(percent_observations = 100 * n / sum(n)) %>%
   view()
 
-#Tryng to combine both spreadsheets, so we have percent availability and percent recorded obs together.
+#Coombining both spreadsheets, so we have percent availability and percent recorded obs together.
 wint_avail_and_selection <- merge(wint_mcp_percent_lcov_clean, percent_of_obs_in_lcov, by = c("band_numb", "lcov"), all.x = TRUE) %>%
   view()
 
@@ -191,10 +192,9 @@ wint_avail_and_selection <- wint_avail_and_selection %>%
     mutate(n_obs = replace_na(n_obs, 0),
            percent_observations = replace_na(percent_observations, 0))
   
-           
 ```
 
-Summarizing some date from winter 2021/22 land cover availability, some exploratory analysis.
+Summarizing data from winter 2021/22 land cover availability, some exploratory analysis.
 ```{r}
 #Creating a spreadsheet of home range sizes for each bobwhite. Awkward but effective method.
 hr_size_ha <- wint_mcp_percent_lcov_clean %>%
@@ -230,17 +230,31 @@ first_quartile %>%
        y = "Percent of available/selected land cover",
        title = "Available vs selected landcover for bobwhite with small home ranges",
        subtitle = "Columns show availability, plus signs show use") +
-  theme_minimal() +
+  theme_solarized_2() +
   scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
   facet_wrap(~band_numb)
 
-#Looking at availability for mid-sized HR.
+#Another way of visualizing. First quartile.
+first_quartile %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = (percent_observations - percent_lcov_avail)/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection minus availability",
+       title = "Available vs selected landcover for bobwhite with small home ranges") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+
+#Looking at availability for med-small HR.
 second_quartile <- wint_avail_and_selection %>%
   filter(hr_size > 6.724,
          hr_size <=9.147 ) %>%
   view()
 
-#Bar chart of small home ranges
+#Bar chart of med-small home ranges
 second_quartile %>%
   mutate(lcov = fct_relevel(lcov, c("AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
   ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
@@ -251,16 +265,30 @@ second_quartile %>%
        y = "Percent of available/selected land cover",
        title = "Available vs selected landcover for bobwhite with medium-small home ranges",
        subtitle = "Columns show availability, plus signs show use") +
-  theme_minimal() +
+  theme_solarized_2() +
   scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080", "PP" = "#0e4726","NP" = "#15994c")) +
   facet_wrap(~band_numb) 
 
-#Looking at availability for large home ranges
+#Another way of visualizing. Second quartile.
+second_quartile %>%
+  mutate(lcov = fct_relevel(lcov, c("AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = (percent_observations - percent_lcov_avail)/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection minus availability",
+       title = "Available vs selected landcover for bobwhite with small home ranges") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+#Looking at availability for med-large home ranges
 third_quartile <- wint_avail_and_selection %>%
   filter(hr_size > 9.147, 
          hr_size <= 13.326) %>%
   view()
 
+#Making a bar chart.
 third_quartile %>%
     mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
   ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
@@ -271,10 +299,24 @@ third_quartile %>%
        y = "Percent of available/selected land cover",
        title = "Available vs selected landcover for bobwhite with med-large home ranges",
        subtitle = "Columns show availability, plus signs show use") +
-  theme_minimal() +
+  theme_solarized_2() +
   scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
   facet_wrap(~band_numb)
 
+#Another way of visualizing. Med-large home ranges.
+third_quartile %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = (percent_observations - percent_lcov_avail)/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection minus availability",
+       title = "Available vs selected landcover for bobwhite with med-small home ranges") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+#Largest home ranges
 fourth_quartile <- wint_avail_and_selection %>%
   filter(hr_size > 13.326) %>%
   view()
@@ -287,12 +329,86 @@ fourth_quartile %>%
   scale_y_continuous(labels = percent) +
   labs(x = "Land cover", 
        y = "Percent of available/selected land cover",
-       title = "Available vs selected landcover for bobwhite with large home ranges",
+       title = "Available vs selected landcover for bobwhite with med-large home ranges",
        subtitle = "Columns show availability, plus signs show use") +
-  theme_minimal() +
+  theme_solarized_2() +
   scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
   facet_wrap(~band_numb)
 
+#Another way of visualizing. Largest home ranges.
+fourth_quartile %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = (percent_observations - percent_lcov_avail)/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection minus availability",
+       title = "Available vs selected landcover for bobwhite with Large home ranges") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+```
+
+Differences in use vs availability
+```{r}
+#Creating column showing difference between avail and selection 
+wint_avail_selection_dif <- wint_avail_and_selection %>%
+  mutate(sel_vs_avail = percent_observations - percent_lcov_avail) %>%
+  view()
+
+#Plotting for each bird.
+wint_avail_selection_dif %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = sel_vs_avail/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection vs availability (percent)",
+       title = "Land cover selection vs availability") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+#Finding median availabiity, median selection, and difference
+med_wint_avail_selection_diff <- wint_avail_and_selection %>%
+  group_by(lcov) %>%
+  summarize(med_lcov_avail = median(percent_lcov_avail),
+            med_lcov_sel = median(percent_observations)) %>%
+  mutate(med_sel_vs_avail = med_lcov_sel - med_lcov_avail)
+
+#Plottign differneces between median selection and availability
+med_wint_avail_selection_diff %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = med_sel_vs_avail/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection vs availability (percent)",
+       title = "Medain percent selected - median availability") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c"))
+
+#Finding mean avail, mean selection, mean difference
+mean_wint_avail_selection_diff <- wint_avail_and_selection %>%
+  group_by(lcov) %>%
+  summarize(mean_lcov_avail = mean(percent_lcov_avail),
+            mean_lcov_sel = mean(percent_observations)) %>%
+  mutate(mean_sel_vs_avail = mean_lcov_sel - mean_lcov_avail)
+
+#Plotting mean selected vs mean avail
+mean_wint_avail_selection_diff %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = mean_sel_vs_avail/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection vs availability (percent)",
+       title = "Mean percent selected - mean availability") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c"))
+  
+ 
 ```
 
 
