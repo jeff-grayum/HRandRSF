@@ -25,23 +25,179 @@ library(gitcreds)
 library(sf)
 library(raster)
 library(RColorBrewer)
+library(ggbeeswarm)
+library(qqplotr)
 ```
 
 Importing winter 2021/22 data, cleaning, filtering (30+ obs), and creating Spatial Point Data Frame.
 ```{r}
 #Importing data, making names snake_case
-winter_2021_22_locs <- read_excel("/Users/jeffgrayum/Documents/BobwhiteData/BobwhiteData 2/All_Winter_Locs_Oct_2021_Traps.xlsx") %>%
-  clean_names()
+winter_2021_22_locs <- read_excel("/Users/jeffgrayum/Documents/BobwhiteData/BobwhiteData 2/All_Winter_Locs_Oct_2021_Traps.xlsx") %>% 
+  clean_names() %>%
+  view()
+
+winter_2021_22_locs <- winter_2021_22_locs %>%
+  mutate(date = as_date(date))
+
+winter_2021_22_locs <- winter_2021_22_locs %>%
+  filter(date < "2022-3-14")
 
 winter_2021_22_locs %>%
   view()
+  
 
+#Making list of birds with 30+ observations
+samp_list_5 <- winter_2021_22_locs %>%
+  group_by(trap_locat) %>%
+  summarize(n = n()) %>%
+  arrange(n) %>%
+  filter(n > 5) %>%
+  dplyr::select(trap_locat) %>%
+  extract2(1) %>%
+  as.character() 
+
+#Filtering spreadsheet; only including birds from samp_list --> "SampleSize_winter_locs" 
+SS_5_winter_2021_22_locs <- winter_2021_22_locs %>%
+  filter(trap_locat %in% samp_list_5) %>%
+  droplevels()
+
+
+#Counting obs for each bird. Creating data frame.
+SS_5_winter_2021_22_numb_obs <- SS_5_winter_2021_22_locs %>%
+  count(trap_locat, sort = TRUE, name = "obs")
+
+SS_5_winter_2021_22_numb_obs <- SS_5_winter_2021_22_numb_obs %>%
+  rename(covey = trap_locat)
+
+#Setting projection and CRS to NAD 1983 16N
+prj <- '+init=epsg:26916'
+CRS("+init=epsg:26916")
+
+#Creating spatial points data frame.
+SS_5_winter_2021_22_locs_SPDF <- SpatialPointsDataFrame(coordinates(cbind(SS_5_winter_2021_22_locs$easting, SS_5_winter_2021_22_locs$northing)), data = SS_5_winter_2021_22_locs, proj4string = CRS(prj))
+
+SS_5_winter_2021_22_locs_SPDF %>%
+  str()
+```
+
+Estimating MCP home ranges for bobwhite with 5+ observations (Min required sample size)
+```{r}
+#Verifying trap location (covey) is actually in column 7.
+SS_5_winter_2021_22_locs_SPDF[, 10]
+
+#Creating MCP for each bobwhite.
+SS_5_mcp_hr_winter_2021_22 <- mcp((SS_5_winter_2021_22_locs_SPDF[, 10]), percent = 95)
+
+#Plotting HR, adding observed locations, adding shapefile of study site.
+plot(SS_5_mcp_hr_winter_2021_22)
+plot(SS_5_winter_2021_22_locs_SPDF, col = as.data.frame(SS_5_winter_2021_22_locs_SPDF)[,10], add = TRUE)
+#Below, we can add Raster_StudySite or SF_StudySite
+plot(SF_StudySite, add = TRUE, alpha = 0.5)
+
+#Looking at size of home range (in hectares) for each bobwhite
+SS_5_mcp_hr_size_winter_2021_22 <- as.data.frame(SS_5_mcp_hr_winter_2021_22)
+
+SS_5_mcp_hr_size_winter_2021_22 <- SS_5_mcp_hr_size_winter_2021_22 %>%
+  rename(covey = id)
+
+SS_5_mcp_hr_size_winter_2021_22 %>%
+  view()
+
+
+write.csv(SS_5_mcp_hr_size_winter_2021_22,"/Users/jeffgrayum/Downloads/MCP_covey_HR_2021_22.csv", row.names = FALSE)
+
+#Calculating home range size across levels/utilization distributions (i.e., 50%, 90%)
+#First, we have to adjust plot margins (large plot)
+par(mar = c(1, 1, 1, 1))
+#Then, we can plot home range sizes for different Utilization Distributions
+mcp_hr_across_levels_wint_2021_22 <- mcp.area(SS_winter_2021_22_locs_SPDF[,10])
+```
+
+Plotting number of obs vs home range size.
+```{r}
+#First, we must merge data frames.
+num_obs_mcp_hr_size_winter_2021_22 <- merge(SS_5_winter_2021_22_numb_obs, SS_5_mcp_hr_size_winter_2021_22, by = "covey", all.x = TRUE) 
+
+num_obs_mcp_hr_size_winter_2021_22 %>%
+  view()
+
+num_obs_mcp_hr_size_winter_2021_22 %>%
+  ggplot(aes(obs)) +
+  geom_density(fill = "blue", alpha = 0.5) +
+  theme_minimal() +
+  labs(x = "Number of recorded observations (covey)",
+       y = "Density",
+       title = "Distribution of the number of recorded locations for each covey")
+
+num_obs_mcp_hr_size_winter_2021_22 %>%
+  ggplot(aes(obs, area)) +
+  geom_point() +
+  geom_smooth() +
+  theme_minimal() +
+  labs(x = "Number of observations (covey)",
+       y = "Home range size (ha)")
+```
+
+Creating KDE home ranges, by covey. Winter 2021/22.
+```{r}
+#Creating KDE HRs
+covey_kde_hr_winter_2021_22 <- kernelUD(SS_5_winter_2021_22_locs_SPDF[, 10])
+
+#Side-by-side image of all bobwhite HRs. Kind of silly.
+image(covey_kde_hr_winter_2021_22)
+
+#Mapping KDE home ranges onto study site at a 90% UD
+covery_kde_hr_ud <- plot(getverticeshr(covey_kde_hr_winter_2021_22, percent = 95))
+
+#We can add either Raster_StudySite or SF_StudySite below.
+plot(SF_StudySite, alpha = 0.5, add = TRUE)
+plot(SS_5_winter_2021_22_locs_SPDF, col = as.data.frame(SS_5_winter_2021_22_locs_SPDF)[,10], add = TRUE)
+
+#Looking at a data frame of KDE HR sizes across various utilization distributions (e.g, 50%, 90%)
+covey_kde_hr_across_levels_2021_22 <- kernel.area(covey_kde_hr_winter_2021_22) 
+
+write.csv(covey_kde_hr_across_levels_2021_22,"/Users/jeffgrayum/Downloads/Covey_KDE_HR_By_BandNumb_2021_22.csv", row.names = TRUE)
+
+covey_kde_hr_across_levels_2021_22 %>%
+  view()
+```
+
+Comparing winter MCP and KDE covey home ranges.
+```{r}
+#Plotting MCP and KDE home ranges over each other.
+plot(SS_5_mcp_hr_winter_2021_22, border = "blue")
+covery_kde_hr_ud <- plot(getverticeshr(covey_kde_hr_winter_2021_22, percent = 95), add = TRUE, border = "red")
+
+
+mcp_vs_kde <- read_excel("/Users/jeffgrayum/Documents/BobwhiteData/MCP_vs_KDE_Covey_HR_2021_22.xlsx") %>%
+  clean_names()
+
+mcp_vs_kde_pivot <- mcp_vs_kde %>%
+  rename(KDE = kde_area,
+         MCP = mcp_area) %>%
+  pivot_longer(MCP:KDE, names_to = "analysis", values_to = "ha")
+
+mcp_vs_kde_pivot %>%
+  ggplot(aes(analysis, ha, fill = analysis)) +
+  geom_boxplot() +
+  labs(x = "Method",
+       y = "Home range size (ha)",
+       title = "Comparing KDE and MCP covey home range sizes",
+       subtitle = "Winter 2021/22",
+       caption = "Ichauway Quail Project") +
+  theme_solarized_2()+
+  theme(legend.position = "none") 
+```
+
+
+Filtering for birds with 30+obs.
+```{r}
 #Making list of birds with 30+ observations
 samp_list <- winter_2021_22_locs %>%
   group_by(band_numb) %>%
   summarize(n = n()) %>%
   arrange(n) %>%
-  filter(n > 30) %>%
+  filter(n >= 30) %>%
   dplyr::select(band_numb) %>%
   extract2(1) %>%
   as.character() 
@@ -91,7 +247,7 @@ plot(SS_winter_2021_22_locs_SPDF)
 plot(Raster_StudySite, alpha = 0.5, add = TRUE)
 ```
 
-Evaluating Winter 2021/22 minimum convex polygon (MCP) home ranges for each bobwhite.
+Evaluating (Sample size 30+) Winter 2021/22 minimum convex polygon (MCP) home ranges for each bobwhite.
 ```{r}
 #We'll plot a MCP HR for each bird, making a home range for each band number (stored in column 7) [, 7] 
 #Verifying band number is actually in column 7.
@@ -107,14 +263,41 @@ plot(SS_winter_2021_22_locs_SPDF, col = as.data.frame(SS_winter_2021_22_locs_SPD
 plot(SF_StudySite, add = TRUE, alpha = 0.5)
 
 #Looking at size of home range (in hectares) for each bobwhite
-as.data.frame(mcp_hr_winter_2021_22)
+mcp_hr_size_winter_2021_22 <- as.data.frame(mcp_hr_winter_2021_22) 
+
+write.csv(mcp_hr_size_winter_2021_22,"/Users/jeffgrayum/Downloads/MCP_HR_By_BandNumb_2021_22.csv", row.names = FALSE)
 
 #Calculating home range size across levels/utilization distributions (i.e., 50%, 90%)
 #First, we have to adjust plot margins (large plot)
 par(mar = c(1, 1, 1, 1))
 #Then, we can plot home range sizes for different Utilization Distributions
-across_levels <- mcp.area(SS_winter_2021_22_locs_SPDF[,7])
+mcp_hr_across_levels_wint_2021_22 <- mcp.area(SS_winter_2021_22_locs_SPDF[,7])
+
+write.csv(mcp_hr_across_levels_wint_2021_22,"/Users/jeffgrayum/Downloads/MCP_HR_By_BandNumb_2021_22.csv", row.names = TRUE)
 ```
+
+
+Creating kernel density estimates (KDEs) of Winter 2021/22 home ranges for each bobwhite.
+```{r}
+#Creating KDE HRs
+kde_hr_winter_2021_22 <- kernelUD(SS_winter_2021_22_locs_SPDF[, 7])
+
+#Side-by-side image of all bobwhite HRs. Kind of silly.
+image(kde_hr_winter_2021_22)
+
+#Mapping KDE home ranges onto study site at a 90% UD
+kde_hr_ud <- plot(getverticeshr(kde_hr_winter_2021_22, percent = 90))
+
+#We can add either Raster_StudySite or SF_StudySite below.
+plot(Raster_StudySite, alpha = 0.5, add = TRUE)
+plot(SS_winter_2021_22_locs_SPDF, add = TRUE)
+
+#Looking at a data frame of KDE HR sizes across various utilization distributions (e.g, 50%, 90%)
+kde_hr_across_levels_2021_22 <- kernel.area(kde_hr_winter_2021_22) 
+
+write.csv(kde_hr_across_levels_2021_22,"/Users/jeffgrayum/Downloads/KDE_HR_By_BandNumb_2021_22.csv", row.names = TRUE)
+```
+
 
 Now, looking at percent of each land cover type within each bobwhite's MCP (availability).
 Importhing spreadsheets (made with ArcGIS), cleaning names.
@@ -194,16 +377,36 @@ wint_avail_and_selection <- wint_avail_and_selection %>%
   
 ```
 
-Summarizing data from winter 2021/22 land cover availability, some exploratory analysis.
+Looking at home range sizes. Winter 2021/22
 ```{r}
 #Creating a spreadsheet of home range sizes for each bobwhite. Awkward but effective method.
-hr_size_ha <- wint_mcp_percent_lcov_clean %>%
+hr_size_ha_winter <- wint_mcp_percent_lcov_clean %>%
   group_by(band_numb) %>%
   summarize(hr_size_ha = mean(hr_size)) %>%
   view()
 
+hr_size_ha_winter %>%
+  ggplot(aes(hr_size_ha)) +
+  geom_density(fill = "blue", alpha = 0.5) +
+  theme_minimal() + 
+  labs(x = "Home range size (ha)", 
+       y = "",
+       title = "Density plot of home range size",
+       subtitle = "Winter 2021/22")
+
+hr_size_ha_winter %>%
+  ggplot(aes(x = factor(1), y = hr_size_ha)) +
+  geom_violin(fill = "blue", alpha = 0.5) +
+  theme_minimal() + 
+  labs(x = "Home range size (ha)", 
+       y = "",
+       title = "Violin plot of home range size",
+       subtitle = "Winter 2021/22")
+
+
+
 #Boxplot of hr sizes
-hr_size_ha %>%
+hr_size_ha_winter %>%
   ggplot(aes(x = "", y = hr_size_ha)) +
   geom_boxplot() +
   theme_minimal() +
@@ -212,14 +415,16 @@ hr_size_ha %>%
        title = "MCP home range sizes (ha) of NOBO at The Jones Center ")
 
 #5 number summary of home range sizes.
-summary(hr_size_ha$hr_size_ha)
+summary(hr_size_ha_winter$hr_size_ha)
+```
 
-#Let's look at availability of of each land cover type for bobwhite with relative small hr
+Let's look at availability of of each land cover type for bobwhite with different sized home ranges.
+```{r}
 #Filtering for NOBO in first quartile.
 first_quartile <- wint_avail_and_selection %>%
   filter(hr_size <= 6.724)
 
-#Bar chart of availability.
+#Bar chart of availability. 
 first_quartile %>%
   mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
   ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
@@ -321,6 +526,7 @@ fourth_quartile <- wint_avail_and_selection %>%
   filter(hr_size > 13.326) %>%
   view()
 
+#Bar chart of avail vs selection. Large home ranges.
 fourth_quartile %>%
     mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
   ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
@@ -350,7 +556,7 @@ fourth_quartile %>%
 
 ```
 
-Differences in use vs availability
+Differences in use vs availability. Winter 2021-22
 ```{r}
 #Creating column showing difference between avail and selection 
 wint_avail_selection_dif <- wint_avail_and_selection %>%
@@ -370,7 +576,7 @@ wint_avail_selection_dif %>%
   scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
   facet_wrap(~band_numb)
 
-#Finding median availabiity, median selection, and difference
+#Finding median availabiity, median selection, and difference Winter 2021/22
 med_wint_avail_selection_diff <- wint_avail_and_selection %>%
   group_by(lcov) %>%
   summarize(med_lcov_avail = median(percent_lcov_avail),
@@ -437,7 +643,7 @@ Repeating the process with Summer 2022 locations.
 Importing data, cleaning, filtering (30+ obs), creating Spatial Points Data Frame
 ```{r}
 #Importing data, making names snake_case
-summer_2022_locs <- read_excel("/Users/jeffgrayum/Documents/BobwhiteData/ALL_LOCS_SUMMER_2022.xlsx") %>%
+summer_2022_locs <- read_excel("/Users/jeffgrayum/Documents/BobwhiteData/All_Locs_Summer_2022_CLEAN.xlsx") %>%
   clean_names()
 
 summer_2022_locs %>%
@@ -459,7 +665,7 @@ SS_summer_2022_locs <- summer_2022_locs %>%
   droplevels()
 
 #Exporting as .csv, just in case I need it later.
-#write.csv(SS_summer_2022_locs,"/Users/jeffgrayum/Downloads/SS_summer_2022_locs.csv", row.names = FALSE)
+write.csv(SS_summer_2022_locs,"/Users/jeffgrayum/Documents/BobwhiteData/SS_summer_2022_locs_Clean.csv", row.names = FALSE)
 
 #Verifying only birds with 30+ obs are included in data frame
 SS_summer_2022_locs %>%
@@ -506,7 +712,7 @@ Evaluating Summer 2022 minimum convex polygon (MCP) home ranges for each bobwhit
 SS_summer_2022_locs_SPDF[, 7]
 
 #Creating MCP for each bobwhite.
-mcp_hr_summer_2022 <- mcp((SS_summer_2022_locs_SPDF[, 7]))
+mcp_hr_summer_2022 <- mcp((SS_summer_2022_locs_SPDF[, 7]), percent = 95)
 
 #Plotting HR, adding observed locations, adding shapefile of study site.
 plot(mcp_hr_summer_2022)
@@ -540,10 +746,314 @@ plot(SF_StudySite, add = TRUE)
 plot(SS_summer_2022_locs_SPDF, add = TRUE)
 
 #Looking at a data frame of KDE HR sizes across various utilization distributions (e.g, 50%, 90%)
-kernel.area(kde_hr_summer_2022) %>%
-  view()
+kde_home_range_summer_2022 <- kernel.area(kde_hr_summer_2022)
+
+# Subset the data frame to only include the 90% utilization distribution
+df_90 <- kde_home_range_summer_2022[kde_home_range_summer_2022$utilization_level == 90, ]
+
+# Create the boxplot
+ggplot(df_90, aes(x = 90, y = home_range_size)) +
+  geom_boxplot() +
+  xlab("Utilization Level") +
+  ylab("Home Range Size") +
+  ggtitle("Boxplot of Home Range Size at 90% Utilization Distribution")
+
 ```
 
 
+```{r}
+#Importing sprreadsheet of landcover availability within MCP home range.
+summer_mcp_percent_lcov <- read_excel("/Users/jeffgrayum/Downloads/SummerMCP_Habitat_Percent.xlsx")
 
+#Taking a quick look.
+summer_mcp_percent_lcov %>%
+  view()
+
+#Shortening names of each land cover type. Changing column names. Cleaning names.
+summer_mcp_percent_lcov_clean <- summer_mcp_percent_lcov %>% 
+  mutate(HABITAT = ifelse(HABITAT == "AGRICULTURAL", "AG", 
+                         ifelse(HABITAT == "WILDLIFE FOOD PLOT", "WFP", 
+                                ifelse(HABITAT == "HARDWOOD", "HW", 
+                                       ifelse(HABITAT == "PINE/HARDWOOD", "P_H", 
+                                              ifelse(HABITAT == "HARDWOOD/PINE FOREST", "H_P", 
+                                                     ifelse(HABITAT == "WETLAND", "WL", 
+                                                            ifelse(HABITAT == "SHRUB/SCRUB", "S_S", 
+                                                                   ifelse(HABITAT == "URBAN/MOWED", "MOW", 
+                                                                          ifelse(HABITAT == "PINE PLANTATION", "PP", 
+                                                                                 ifelse(HABITAT == "NATURAL PINE", "NP", HABITAT))))))))))) %>%
+    rename(LCOV = HABITAT,
+           HR_Size = Hectares,
+           ha_of_lcov = Hab_Hectar) %>%
+  clean_names()
+
+#Does it look better? I believe so.
+summer_mcp_percent_lcov_clean %>% 
+  view()
+
+#Importing spreadsheet of recorded locations with land cover type (selection)
+summer_selection <- read_excel("/Users/jeffgrayum/Downloads/Summer_2022_Obs_Hab_Use.xlsx") %>%
+  view()
+
+#Cleaning names, so they match availability spreadsheet.
+summer_selection_clean <- summer_selection %>%
+   mutate(HABITAT = ifelse(HABITAT == "AGRICULTURAL", "AG", 
+                         ifelse(HABITAT == "WILDLIFE FOOD PLOT", "WFP", 
+                                ifelse(HABITAT == "HARDWOOD", "HW", 
+                                       ifelse(HABITAT == "PINE/HARDWOOD", "P_H", 
+                                              ifelse(HABITAT == "HARDWOOD/PINE FOREST", "H_P", 
+                                                     ifelse(HABITAT == "WETLAND", "WL", 
+                                                            ifelse(HABITAT == "SHRUB/SCRUB", "S_S", 
+                                                                   ifelse(HABITAT == "URBAN/MOWED", "MOW", 
+                                                                          ifelse(HABITAT == "PINE PLANTATION", "PP", 
+                                                                                 ifelse(HABITAT == "NATURAL PINE", "NP", HABITAT))))))))))) %>%
+    rename(LCOV = HABITAT) %>%
+  clean_names()
+
+#Does it match (It does)
+summer_selection_clean %>%
+  view()
+
+#Adding column recording percent of obs (for each bobwhite) in each land cover type.
+percent_of_summer_obs_in_lcov <- summer_selection_clean %>%
+  count(band_numb, lcov) %>%
+  group_by(band_numb) %>%
+  mutate(percent_observations = 100 * n / sum(n)) %>%
+  view()
+
+#Coombining both spreadsheets, so we have percent availability and percent recorded obs together.
+summer_avail_and_selection <- merge(summer_mcp_percent_lcov_clean, percent_of_summer_obs_in_lcov, by = c("band_numb", "lcov"), all.x = TRUE) %>%
+  view()
+
+#Making this look better.
+summer_avail_and_selection <- summer_avail_and_selection %>%
+  rename(percent_lcov_avail = percent_habitat,
+         n_obs = n) 
+
+  
+#Filling NAs with 0s
+  summer_avail_and_selection  <- summer_avail_and_selection %>%
+    mutate(n_obs = replace_na(n_obs, 0),
+           percent_observations = replace_na(percent_observations, 0))
+```
+
+Looking at home range sizes. Summer 2022.
+```{r}
+#Creating a spreadsheet of home range sizes for each bobwhite. Awkward but effective method.
+hr_size_ha_summer <- summer_mcp_percent_lcov_clean %>%
+  group_by(band_numb) %>%
+  summarize(hr_size_ha = mean(hr_size)) %>%
+  view()
+
+#Boxplot of hr sizes
+hr_size_ha_summer %>%
+  ggplot(aes(x = "", y = hr_size_ha)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(x = "",
+       y = "Home range size (ha)",
+       title = "Summer 2022 MCP home range sizes (ha) of NOBO at The Jones Center ")
+
+hr_size_ha_summer %>%
+  ggplot(aes(hr_size_ha)) +
+  geom_density(fill = "blue", alpha = 0.5) +
+  theme_minimal() + 
+  labs(x = "Home range sizes (ha)", 
+       y = "",
+       title = "Density plot of home range size",
+       subtitle = "Summer 2022")
+
+hr_size_ha_summer %>%
+  ggplot(aes(x = factor(1), y = hr_size_ha)) +
+  geom_violin(fill = "blue", alpha = 0.5) +
+  theme_minimal() + 
+  labs(x = "Home range size (ha)", 
+       y = "",
+       title = "Violin plot of home range size",
+       subtitle = "Summer 2022")
+
+#5 number summary of home range sizes.
+summary(hr_size_ha_summer$hr_size_ha)
+
+shapiro.test(hr_size_ha_summer$hr_size_ha)
+```
+
+Exploring differences in availability and selection. Summer 2022.
+```{r}
+#Let's look at availability of of each land cover type for bobwhite with different sized home ranges.
+#Filtering for NOBO in first quartile.
+first_quartile_summer <- summer_avail_and_selection %>%
+  filter(hr_size <= 8.03)
+
+#Bar chart of availability. 
+first_quartile_summer %>%
+  mutate(lcov = fct_relevel(lcov, c("AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
+  geom_col() +
+  geom_point(mapping = aes(x = lcov, y = percent_observations/100), shape = 3) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Percent of available/selected land cover",
+       title = "Summer 2022 available vs selected landcover for bobwhite with small home ranges",
+       subtitle = "Columns show availability, plus signs show use") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+#Another way of visualizing. First quartile.
+first_quartile_summer %>%
+  mutate(lcov = fct_relevel(lcov, c("AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = (percent_observations - percent_lcov_avail)/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection minus availability",
+       title = "Summer vailable vs selected landcover for bobwhite with small home ranges") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+
+#Looking at availability for med-small HR.
+second_quartile_summer <- summer_avail_and_selection %>%
+  filter(hr_size > 8.03,
+         hr_size <=10.99 ) %>%
+  view()
+
+#Bar chart of med-small home ranges
+second_quartile_summer %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW","AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
+  geom_col() +
+  geom_point(mapping = aes(x = lcov, y = percent_observations/100), shape = 3) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Percent of available/selected land cover",
+       title = "Summer 2022 available vs selected landcover for bobwhite with medium-small home ranges",
+       subtitle = "Columns show availability, plus signs show use") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080", "PP" = "#0e4726","NP" = "#15994c", "MOW" = "#000000")) +
+  facet_wrap(~band_numb) 
+
+#Another way of visualizing. Second quartile.
+second_quartile_summer %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW","AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = (percent_observations - percent_lcov_avail)/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection minus availability",
+       title = "Summer 2022 Available vs selected landcover for bobwhite with small home ranges") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+#Looking at availability for med-large home ranges
+third_quartile_summer <- summer_avail_and_selection %>%
+  filter(hr_size > 10.999, 
+         hr_size <= 15.266) %>%
+  view()
+
+#Making a bar chart.
+third_quartile_summer %>%
+    mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
+  geom_col() +
+  geom_point(mapping = aes(x = lcov, y = percent_observations/100), shape = 3) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Percent of available/selected land cover",
+       title = "Summer 2022 available vs selected landcover for bobwhite with med-large home ranges",
+       subtitle = "Columns show availability, plus signs show use") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+#Another way of visualizing. Med-large home ranges.
+third_quartile_summer %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = (percent_observations - percent_lcov_avail)/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection minus availability",
+       title = "Summer 2022 available vs selected landcover for bobwhite with med-small home ranges") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+#Largest home ranges
+fourth_quartile_summer <- summer_avail_and_selection %>%
+  filter(hr_size > 15.266) %>%
+  view()
+
+#Bar chart of avail vs selection. Large home ranges.
+fourth_quartile_summer %>%
+    mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = percent_lcov_avail/100, fill = lcov)) +
+  geom_col() +
+  geom_point(mapping = aes(x = lcov, y = percent_observations/100), shape = 3) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Percent of available/selected land cover",
+       title = "Available vs selected landcover for bobwhite with med-large home ranges",
+       subtitle = "Columns show availability, plus signs show use") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+
+#Another way of visualizing. Largest home ranges.
+fourth_quartile_summer %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = (percent_observations - percent_lcov_avail)/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection minus availability",
+       title = "Summer 2022 available vs selected landcover for bobwhite with Large home ranges") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c")) +
+  facet_wrap(~band_numb)
+```
+
+Median and mean avail and selection. Summer 2022.
+```{r}
+#Finding median availabiity, median selection, and difference Winter 2021/22
+med_summer_avail_selection_diff <- summer_avail_and_selection %>%
+  group_by(lcov) %>%
+  summarize(med_lcov_avail = median(percent_lcov_avail),
+            med_lcov_sel = median(percent_observations)) %>%
+  mutate(med_sel_vs_avail = med_lcov_sel - med_lcov_avail)
+
+#Plottign differneces between median selection and availability
+med_summer_avail_selection_diff %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = med_sel_vs_avail/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection vs availability (percent)",
+       title = "Summer 2022: Medain percent selected - median availability") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c"))
+
+#Finding mean avail, mean selection, mean difference
+mean_summer_avail_selection_diff <- summer_avail_and_selection %>%
+  group_by(lcov) %>%
+  summarize(mean_lcov_avail = mean(percent_lcov_avail),
+            mean_lcov_sel = mean(percent_observations)) %>%
+  mutate(mean_sel_vs_avail = mean_lcov_sel - mean_lcov_avail)
+
+#Plotting mean selected vs mean avail
+mean_summer_avail_selection_diff %>%
+  mutate(lcov = fct_relevel(lcov, c("MOW", "AG", "WFP", "S_S", "PP", "NP", "P_H", "H_P", "HW"))) %>%
+  ggplot(aes(x = lcov, y = mean_sel_vs_avail/100, fill = lcov)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Land cover", 
+       y = "Selection vs availability (percent)",
+       title = "Summer 2022: Mean percent selected - mean availability") +
+  theme_solarized_2() +
+  scale_fill_manual(values = c("AG" = "#f3f587","WFP" = "#DDA0DD", "HW" = "#523232","P_H" = "#4B5320", "H_P" = "#8B5A2B", "S_S" = "#808080","MOW" = "#000000","PP" = "#0e4726","NP" = "#15994c"))
+  
+```
 
