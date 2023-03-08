@@ -6,6 +6,11 @@ library(purrr)
 library(tidyr)
 library(lme4)
 library(lmerTest)
+library(janitor)
+#install.packages("amt")
+#install.packages("lmerTest")
+library(amt)
+library(lmerTest)
 
 #Importing shapefile of study site.
 habitat <- raster::shapefile("/Users/jeffgrayum/Downloads/Simplified_LandCover/Simplified_LandCover.shp")
@@ -29,13 +34,13 @@ head(habitat)
 #Creating template raster. Here, we specify crs, extent, and resolution of our raster.
 template.raster <- raster(crs = habitat@proj4string,
        ext = extent(habitat@bbox),
-       res = 30)
+       res = 5)
 
 #Plotting template raster (This doesn't work because there is nothing to plot!)
 plot(template.raster)
 
 
-#Rasterizing the map of study site, filling with land covef type (as numeric factor)
+#Rasterizing the map of study site, filling with land cover type (as numeric factor)
 habitat.raster <- rasterize(x = habitat,
                             y = template.raster,
                             field = habitat$hab.factor)
@@ -78,20 +83,34 @@ plot(distanceStack)
 #install.packages("rio")
 library(rio)
 
-Winter_2021_22_locs <- rio::import("/Users/jeffgrayum/Downloads/All_Winter_Locs_Clean.xlsx", setclass = "tibble")
+winter_2021_22_locs <- rio::import("/Users/jeffgrayum/Downloads/All_Winter_Locs_Clean.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  mutate(date = lubridate::as_date(date))
 
-rsfData <- Winter_2021_22_locs %>% 
+winter_2021_22_locs %>%
+  view()
+
+rsfData <- winter_2021_22_locs %>% 
   as_tibble() %>%
-  nest(-Trap_locat, .key = "indData") %>%
-  mutate(indData = map(indData, mcp, function(x,y){
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  nest(indData = !trap_locat) %>% 
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 3) %>%
+  mutate(indData = map(indData, function(x){
+    # x <- rsfData$indData[[1]]
     x %>%
       make_track(.x = easting,
                  .y = northing,
-                 .t = date) %>%
-      random_points(hr = "mcp") %>%
+                 .t = DT,
+                 crs = 26916) %>%
+      random_points(., hr = "mcp", n = nrow(x) * 5, level = 1) %>%
       extract_covariates(distanceStack)
   })) %>%
   unnest(indData)
+
+
 
 pop.rsf <- glmer(case ~ season*(Agricultural + Wetland + Hardwood + Natural Pine) + Agriculture*(Natural.Pine + Wetland) + (1|anid),
       data = rsfData %>% mutate(case = ifelse(case_ == T, 1, 0)),
