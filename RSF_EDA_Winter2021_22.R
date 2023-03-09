@@ -11,6 +11,7 @@ library(janitor)
 #install.packages("lmerTest")
 library(amt)
 library(lmerTest)
+library(rio)
 
 #Importing shapefile of study site.
 habitat <- raster::shapefile("/Users/jeffgrayum/Downloads/Simplified_LandCover/Simplified_LandCover.shp")
@@ -34,7 +35,7 @@ head(habitat)
 #Creating template raster. Here, we specify crs, extent, and resolution of our raster.
 template.raster <- raster(crs = habitat@proj4string,
        ext = extent(habitat@bbox),
-       res = 5)
+       res = 1)
 
 #Plotting template raster (This doesn't work because there is nothing to plot!)
 plot(template.raster)
@@ -58,7 +59,7 @@ habitats <- levels(as.factor(habitat$HABITAT))
 rasterList <- list()
 
 #Creating our for loop. This creates a distance-based raster layer for each of our ten lcov types.
-#This will show the distance from each land cover type, rathern thatn the boundry.
+#This will show the distance from each land cover type, rather that the boundry.
 for(i in 1:length(habitats)){
   # i <- 1
   
@@ -79,9 +80,6 @@ distanceStack <- stack(rasterList)
 #Plotting our ten distance-based raster layers.
 plot(distanceStack)
 
-
-#install.packages("rio")
-library(rio)
 
 winter_2021_22_locs <- rio::import("/Users/jeffgrayum/Downloads/All_Winter_Locs_Clean.xlsx", setclass = "tibble") %>%
   clean_names() %>%
