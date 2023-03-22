@@ -35,7 +35,7 @@ head(habitat)
 #Creating template raster. Here, we specify crs, extent, and resolution of our raster.
 template.raster <- raster(crs = habitat@proj4string,
        ext = extent(habitat@bbox),
-       res = 1)
+       res = 5)
 
 #Plotting template raster (This doesn't work because there is nothing to plot!)
 plot(template.raster)
