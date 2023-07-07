@@ -29,15 +29,19 @@ library(ggbeeswarm)
 library(qqplotr)
 ```
 
-Importing winter 2021/22 data, cleaning, filtering (30+ obs), and creating Spatial Point Data Frame.
+Importing winter 2021/22 data, cleaning, filtering, and creating Spatial Point Data Frame.
 ```{r}
 #Importing data, making names snake_case
-winter_2021_22_locs <- read_excel("/Users/jeffgrayum/Documents/BobwhiteData/BobwhiteData 2/All_Winter_Locs_Oct_2021_Traps.xlsx") %>% 
+winter_2021_22_locs <- read_excel("/Users/jeffgrayum/Downloads/All_Winter_Locs_Clean.xlsx") %>% 
   clean_names() %>%
   view()
 
 winter_2021_22_locs <- winter_2021_22_locs %>%
-  mutate(date = as_date(date))
+  mutate(date = as_date(date)) %>%
+  filter(trap_locat < 99) %>%
+  view()
+
+write.csv(winter_2021_22_locs,"/Users/jeffgrayum/Downloads/Clean_All_Locs_Winter_FallTraps.csv", row.names = FALSE)
 
 winter_2021_22_locs <- winter_2021_22_locs %>%
   filter(date < "2022-3-14")
@@ -69,9 +73,13 @@ SS_5_winter_2021_22_numb_obs <- SS_5_winter_2021_22_locs %>%
 SS_5_winter_2021_22_numb_obs <- SS_5_winter_2021_22_numb_obs %>%
   rename(covey = trap_locat)
 
+summary(SS_5_winter_2021_22_numb_obs$obs)
+
 #Setting projection and CRS to NAD 1983 16N
 prj <- '+init=epsg:26916'
 CRS("+init=epsg:26916")
+
+
 
 #Creating spatial points data frame.
 SS_5_winter_2021_22_locs_SPDF <- SpatialPointsDataFrame(coordinates(cbind(SS_5_winter_2021_22_locs$easting, SS_5_winter_2021_22_locs$northing)), data = SS_5_winter_2021_22_locs, proj4string = CRS(prj))
@@ -80,7 +88,7 @@ SS_5_winter_2021_22_locs_SPDF %>%
   str()
 ```
 
-Estimating MCP home ranges for bobwhite with 5+ observations (Min required sample size)
+Estimating MCP home ranges for coveys with 5+ observations (Min required sample size)
 ```{r}
 #Verifying trap location (covey) is actually in column 7.
 SS_5_winter_2021_22_locs_SPDF[, 10]
@@ -92,9 +100,10 @@ SS_5_mcp_hr_winter_2021_22 <- mcp((SS_5_winter_2021_22_locs_SPDF[, 10]), percent
 plot(SS_5_mcp_hr_winter_2021_22)
 plot(SS_5_winter_2021_22_locs_SPDF, col = as.data.frame(SS_5_winter_2021_22_locs_SPDF)[,10], add = TRUE)
 #Below, we can add Raster_StudySite or SF_StudySite
-plot(SF_StudySite, add = TRUE, alpha = 0.5)
+plot(SF_StudySite, add = TRUE, alpha = 0.8)
 
-#Looking at size of home range (in hectares) for each bobwhite
+
+#Looking at size of home range (in hectares) for each covey
 SS_5_mcp_hr_size_winter_2021_22 <- as.data.frame(SS_5_mcp_hr_winter_2021_22)
 
 SS_5_mcp_hr_size_winter_2021_22 <- SS_5_mcp_hr_size_winter_2021_22 %>%
@@ -104,7 +113,7 @@ SS_5_mcp_hr_size_winter_2021_22 %>%
   view()
 
 
-write.csv(SS_5_mcp_hr_size_winter_2021_22,"/Users/jeffgrayum/Downloads/MCP_covey_HR_2021_22.csv", row.names = FALSE)
+write.csv(SS_5_mcp_hr_size_winter_2021_22,"/Users/jeffgrayum/Downloads/Clean_MCP_covey_HR_2021_22.csv", row.names = FALSE)
 
 #Calculating home range size across levels/utilization distributions (i.e., 50%, 90%)
 #First, we have to adjust plot margins (large plot)
@@ -124,18 +133,20 @@ num_obs_mcp_hr_size_winter_2021_22 %>%
 num_obs_mcp_hr_size_winter_2021_22 %>%
   ggplot(aes(obs)) +
   geom_density(fill = "blue", alpha = 0.5) +
-  theme_minimal() +
+  theme_solarized_2() +
   labs(x = "Number of recorded observations (covey)",
        y = "Density",
-       title = "Distribution of the number of recorded locations for each covey")
+       title = "Distribution of the number of recorded locations for each covey") 
 
 num_obs_mcp_hr_size_winter_2021_22 %>%
   ggplot(aes(obs, area)) +
   geom_point() +
   geom_smooth() +
-  theme_minimal() +
+  theme_solarized_2() +
   labs(x = "Number of observations (covey)",
-       y = "Home range size (ha)")
+       y = "Home range size (ha)",
+       title = "Number of observations per covey vs home range size",
+       subtitle = "Winter 2021/22")
 ```
 
 Creating KDE home ranges, by covey. Winter 2021/22.
@@ -143,20 +154,21 @@ Creating KDE home ranges, by covey. Winter 2021/22.
 #Creating KDE HRs
 covey_kde_hr_winter_2021_22 <- kernelUD(SS_5_winter_2021_22_locs_SPDF[, 10])
 
+
 #Side-by-side image of all bobwhite HRs. Kind of silly.
 image(covey_kde_hr_winter_2021_22)
 
-#Mapping KDE home ranges onto study site at a 90% UD
+#Mapping KDE home ranges onto study site at a 95% UD
 covery_kde_hr_ud <- plot(getverticeshr(covey_kde_hr_winter_2021_22, percent = 95))
 
 #We can add either Raster_StudySite or SF_StudySite below.
-plot(SF_StudySite, alpha = 0.5, add = TRUE)
+plot(Raster_StudySite, alpha = 0.5, add = TRUE)
 plot(SS_5_winter_2021_22_locs_SPDF, col = as.data.frame(SS_5_winter_2021_22_locs_SPDF)[,10], add = TRUE)
 
 #Looking at a data frame of KDE HR sizes across various utilization distributions (e.g, 50%, 90%)
 covey_kde_hr_across_levels_2021_22 <- kernel.area(covey_kde_hr_winter_2021_22) 
 
-write.csv(covey_kde_hr_across_levels_2021_22,"/Users/jeffgrayum/Downloads/Covey_KDE_HR_By_BandNumb_2021_22.csv", row.names = TRUE)
+write.csv(covey_kde_hr_across_levels_2021_22,"/Users/jeffgrayum/Downloads/Clean_Covey_KDE_HR_2021_22.csv", row.names = TRUE)
 
 covey_kde_hr_across_levels_2021_22 %>%
   view()
@@ -172,13 +184,19 @@ covery_kde_hr_ud <- plot(getverticeshr(covey_kde_hr_winter_2021_22, percent = 95
 mcp_vs_kde <- read_excel("/Users/jeffgrayum/Documents/BobwhiteData/MCP_vs_KDE_Covey_HR_2021_22.xlsx") %>%
   clean_names()
 
+median(mcp_vs_kde$mcp_area)
+
+median(mcp_vs_kde$kde_area)
+
 mcp_vs_kde_pivot <- mcp_vs_kde %>%
   rename(KDE = kde_area,
          MCP = mcp_area) %>%
-  pivot_longer(MCP:KDE, names_to = "analysis", values_to = "ha")
+  pivot_longer(MCP:KDE, names_to = "method", values_to = "ha")
+
+
 
 mcp_vs_kde_pivot %>%
-  ggplot(aes(analysis, ha, fill = analysis)) +
+  ggplot(aes(method, ha, fill = method)) +
   geom_boxplot() +
   labs(x = "Method",
        y = "Home range size (ha)",
@@ -225,7 +243,7 @@ SS_winter_2021_22_locs_SPDF <- SpatialPointsDataFrame(coordinates(cbind(SS_winte
 Importing shapefiles and raster layers of study site. Looking at Winter 2021/22 locations.
 ```{r}
 #Shapefile of study site.
-SF_StudySite <- st_read("/Users/jeffgrayum/Downloads/2021_quail_prj", crs = "+init=epsg:26916")
+SF_StudySite <- st_read("/Users/jeffgrayum/Downloads/Simplified_LandCover/Simplified_LandCover.shp")
 
 #Verifying datum
 crs(SF_StudySite)
