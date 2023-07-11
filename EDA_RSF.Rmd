@@ -1,0 +1,292 @@
+---
+title: "RSF_EDA_FIXED"
+output: html_document
+date: "2023-05-31"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Loading libraries.
+```{r}
+library(raster)
+library(amt)
+library(dplyr)
+library(tibble)
+library(purrr)
+library(tidyr)
+library(lme4)
+library(lmerTest)
+library(janitor)
+library(amt)
+library(lmerTest)
+library(rio)
+library(stringr)
+library(MuMIn)
+library(tidyverse)
+```
+
+Importing shapefile of study site, converting to raster layer, establishing template.
+```{r}
+#Importing shapefile of study site.
+habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/BobwhiteData/Simplified_LandCover/Simplified_LandCover.shp")
+
+
+#Rename habitat types to model friendly terms.
+habitat$HABITAT <- gsub("AGRICULTURAL", "AG", habitat$HABITAT)
+habitat$HABITAT <- gsub("SHRUB/SCRUB", "S_S", habitat$HABITAT)
+habitat$HABITAT <- gsub("URBAN/MOWED", "U_M", habitat$HABITAT)
+habitat$HABITAT <- gsub("PINE/HARDWOOD", "P_H", habitat$HABITAT)
+habitat$HABITAT <- gsub("PINE PLANTATION", "PP", habitat$HABITAT)
+habitat$HABITAT <- gsub("WETLAND", "WL", habitat$HABITAT)
+habitat$HABITAT <- gsub("HARDWOOD", "HW", habitat$HABITAT)
+habitat$HABITAT <- gsub("HW/PINE FOREST", "H_P", habitat$HABITAT)
+habitat$HABITAT <- gsub("NATURAL PINE", "NP", habitat$HABITAT)
+habitat$HABITAT <- gsub("WILDLIFE FOOD PLOT", "WFP", habitat$HABITAT)
+
+
+#Checking the extent of the bounding box.
+extent(habitat@bbox)
+
+#Creating a column that treats land cover (habitat) types as a numeric factor.
+habitat$hab.factor <- as.numeric(as.factor(habitat$HABITAT))
+
+#Viewing dataframe.
+habitat %>%
+  view()
+
+#Viewing levels (landcover types aka HABITAT)
+levels(as.factor(habitat$HABITAT))
+
+#Quick look
+head(habitat)
+
+#Creating template raster. Here, we specify crs, extent, and resolution of our raster. For some reason, this won't run with a resolution below 3 meters.
+template.raster <- raster(crs = habitat@proj4string,
+       ext = extent(habitat@bbox),
+       res = 3)
+
+#Plotting template raster (This doesn't work because there is nothing to plot!)
+#plot(template.raster)
+
+
+#Rasterizing the map of study site, filling with land cover type (as numeric factors)
+habitat.raster <- rasterize(x = habitat,
+                            y = template.raster,
+                            field = habitat$hab.factor)
+
+#plotting habitat raster habitat raster
+plot(habitat.raster)
+#windows()
+
+#Viewing habitat shapefile. Landcover types here are now numeric values.
+plot(habitat, col = as.factor(habitat$HABITAT))
+```
+
+
+```{r}
+#assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
+habitats <- levels(as.factor(habitat$HABITAT))
+
+#Creating a raster list. This will be used in our for loop.
+rasterList <- list()
+
+
+#Creating our for loop. This creates a distance-based raster layer for each of our ten lcov types.
+#Each raster cell in a given lcov layer will hold the distance to the nearest respective lcov type. This value will be 0 if the cell is within the lcov type. 
+for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
+  # i <- 1 (bugfinder)
+  #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
+  hab <- subset(habitat, HABITAT == habitats[i])   
+  #assigning a value of 1 to each location in hab in a new column called field.
+  hab$field <- 1 
+  # plot(hab) (uneccesary unless you want to plot each layer as the loop runs)
+  #We rasterize hab subset in each stack, based on raster layer. We transfer values from hab$field. Lcove types outside of the respective layer (background) are assigned NA. We calc distance from each cell to nearest respective lcov type, creating a dist-based raster layer.
+  rasterList[[i]] <- distance(rasterize(hab, template.raster, field = hab$field, background = NA))
+  #Creating list of dist-based raster layers, naming each element after corresponding lcov type.
+  names(rasterList)[i] <- habitats[i]
+}
+
+#This extracts the extent of each raster layer in our list.
+lapply(rasterList, extent)
+
+#Now we stack our raster layers.
+distanceStack <- stack(rasterList)
+
+#Plotting our ten distance-based raster layers.
+plot(distanceStack)
+```
+
+Winter 2021/22
+```{r}
+winter_2021_22_locs <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/All_Winter_2021_22_Locs_Clean.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  mutate(date = lubridate::as_date(date))
+
+#Taking a quick look.
+winter_2021_22_locs %>%
+  view()
+
+#Creating our RSF data. The "#x <- rsfData$indData[[1]] is meant to be a "bugfinder", and muted unless needed.
+rsfData <- winter_2021_22_locs %>% 
+  as_tibble() %>%
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  nest(indData = !trap_locat) %>% 
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 20) %>%
+  mutate(indData = map(indData, function(x){
+    # x <- rsfData$indData[[1]]
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916) %>%
+      random_points(., hr = "mcp", n = nrow(x) * 5, level = 1) %>%
+      extract_covariates(distanceStack)
+  })) %>%
+  unnest(indData)
+
+ rsfData_modified <- rsfData %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  as.data.frame()
+ 
+pop.rsf <- glmer(case ~ AG + HW + NP + H_P + PP + P_H + S_S + U_M + WL + WFP + (1|trap_locat),
+                 data = rsfData_modified,
+                 family = "binomial")
+
+
+summary(pop.rsf)
+
+options(na.action = "na.fail")
+
+pop.dre <- dredge(pop.rsf, fixed = ~(1|trap_locat))
+
+competing <- model.sel(pop.dre, subset = "delta" < 2)
+
+competing %>%
+  view()
+
+# Get variable importance from the model selection table
+var_importance <- sw(competing)
+
+# View variable importance
+print(var_importance)
+```
+
+
+Ok, now lets try plugging in our candidate models instead of using dredge. Winter 2021/22 below.
+```{r}
+# Create a vector to store each of your models
+model_formulas <- c(
+  "case ~ AG + NP + PP + P_H + S_S + (1|trap_locat)",
+  "case ~ NP + PP + P_H + (1|trap_locat)",
+  "case ~ AG + NP + P_H + S_S + (1|trap_locat)",
+  "case ~ NP + H_P + P_H + (1|trap_locat)",
+  "case ~ AG + NP + PP + P_H + H_P + S_S + (1|trap_locat)",
+  "case ~ AG + NP + PP + P_H + H_P + S_S + HW + (1|trap_locat)",
+  "case ~ AG + NP + PP + P_H + H_P + S_S + HW + WFP + (1|trap_locat)",
+  "case ~ NP + PP + P_H + S_S + H_P + WFP + (1|trap_locat)",
+  "case ~ NP + P_H + H_P + WFP + (1|trap_locat)",
+  "case ~ AG + NP + P_H + S_S + WFP + (1|trap_locat)",
+  "case ~ NP + P_H + PP + S_S + (1|trap_locat)",
+  "case ~ AG + NP + PP + S_S + (1|trap_locat)",
+  "case ~ AG + NP + PP + WFP + (1|trap_locat)",
+  "case ~ NP + PP + S_S + (1|trap_locat)",
+  "case ~ AG + NP + PP + P_H + S_S + (1|trap_locat)",
+  "case ~ NP + PP + (1|trap_locat)",
+  "case ~ NP + PP + S_S + (1|trap_locat)",
+  "case ~ NP + (1|trap_locat)",
+  "case ~ AG + HW + NP + H_P + PP + P_H + S_S + U_M + WL + WFP + (1|trap_locat)"
+)
+
+# Initialize list to hold models and dataframe to hold AIC values
+models <- list()
+model_aic_df <- data.frame(Model = character(), AIC = numeric())
+
+# Loop through each model, fit the model, store it in the list and AIC in the data frame
+for (i in seq_along(model_formulas)) {
+  model <- glmer(as.formula(model_formulas[i]), 
+                       data = rsfData_modified, 
+                       family = binomial(link = "logit"), 
+                       control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+                      )
+  
+  # Store the model in the list
+  models[[model_formulas[i]]] <- model
+  
+  # Compute and store the AIC in the data frame
+  model_aic_df <- rbind(model_aic_df, data.frame(Model = model_formulas[i], AIC = AIC(model)))
+}
+
+# Ensure that the model dataframe is ordered by AIC
+model_aic_df <- model_aic_df[order(model_aic_df$AIC), ]
+
+# View the data frame
+model_aic_df
+
+summary(models[[6]])
+```
+
+Summer 22. Repeating the process.
+```{r}
+Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/All_Summer_2022_LOCS_CLEAN.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  mutate(date = lubridate::as_date(date))
+
+#Taking a quick look.
+Summer_2022_locs %>%
+  view()
+
+#Creating our RSF data. The "#x <- rsfData$indData[[1]] is meant to be a "bugfinder", and muted unless needed.
+rsfData <- Summer_2022_locs %>% 
+  as_tibble() %>%
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  nest(indData = !band_numb) %>% 
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 12) %>%
+  mutate(indData = map(indData, function(x){
+    # x <- rsfData$indData[[1]]
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916) %>%
+      random_points(., hr = "mcp", n = nrow(x) * 10, level = 1) %>%
+      extract_covariates(distanceStack)
+  })) %>%
+  unnest(indData)
+
+rsfData_modified <- rsfData %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  as.data.frame()
+
+pop.rsf <- glmer(case ~ AG + HW + NP + H_P + PP + P_H + S_S + U_M + WL + WFP + (1|band_numb),
+                 data = rsfData_modified,
+                 family = "binomial")
+
+
+summary(pop.rsf)
+
+options(na.action = "na.fail")
+
+pop.dre <- dredge(pop.rsf, fixed = ~(1|band_numb))
+
+competing_summer_2022 <- model.sel(pop.dre, subset = "delta" < 2)
+
+competing_summer_2022 %>%
+  view()
+
+# Get variable importance from the model selection table
+var_importance_summer_2022 <- sw(competing_summer_2022)
+
+# View variable importance
+print(var_importance_summer_2022)
+```
+
