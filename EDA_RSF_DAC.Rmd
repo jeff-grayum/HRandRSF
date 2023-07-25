@@ -21,15 +21,13 @@ library(tidyr)
 library(lme4)
 library(lmerTest)
 library(janitor)
-library(amt)
-library(lmerTest)
 library(rio)
 library(stringr)
 library(MuMIn)
 library(tidyverse)
 ```
 
-Importing shapefile of study site, converting to raster layer, establishing template.
+Importing shapefile of study site and renaming layers, converting to raster layer, establishing template for mapping.
 ```{r}
 #Importing shapefile of study site.
 habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/BobwhiteData/Simplified_LandCover/Simplified_LandCover.shp")
@@ -37,18 +35,18 @@ habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/BobwhiteData/Sim
 # habitat <- raster::shapefile("F:/BOBWHITE_DATA/BobwhiteData/Simplified_LandCover/Simplified_LandCover.shp")
 
 
-#Rename landcover types to model friendly terms. Lumping landcover types w similar understory vegetation.
+#Renaming landcover types to model friendly terms. Lumping landcover types w similar understory vegetation.
 habitat$HABITAT <- gsub("AGRICULTURAL", "AG", habitat$HABITAT)
 habitat$HABITAT <- gsub("SHRUB/SCRUB", "SS", habitat$HABITAT)
 habitat$HABITAT <- gsub("URBAN/MOWED", "UM", habitat$HABITAT)
-habitat$HABITAT <- gsub("PINE/HARDWOOD", "NPF", habitat$HABITAT)
+habitat$HABITAT <- gsub("PINE/HARDWOOD", "NP", habitat$HABITAT) #This layer is >50% natural pine (by basal area)
 habitat$HABITAT <- gsub("PINE PLANTATION", "PP", habitat$HABITAT)
 habitat$HABITAT <- gsub("WETLAND", "WL", habitat$HABITAT)
 habitat$HABITAT <- gsub("HARDWOOD", "HW", habitat$HABITAT)
-habitat$HABITAT <- gsub("HW/PINE FOREST", "NPF", habitat$HABITAT)
-habitat$HABITAT <- gsub("NATURAL PINE", "NPF", habitat$HABITAT)
+habitat$HABITAT <- gsub("HW/PINE FOREST", "HW", habitat$HABITAT) #This layer is >50% HW (by basal area)
+habitat$HABITAT <- gsub("NATURAL PINE", "NP", habitat$HABITAT)
 habitat$HABITAT <- gsub("WILDLIFE FOOD PLOT", "AG", habitat$HABITAT)
-habitat$HABITAT <- gsub("NP/PINE FOREST", "NPF", habitat$HABITAT)
+habitat$HABITAT <- gsub("NP/PINE FOREST", "NP", habitat$HABITAT)
 
 #Let's count the landcover types.
 habitat %>%
@@ -106,7 +104,7 @@ for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats"
   hab <- subset(habitat, HABITAT == habitats[i])   
   #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag field = 1.
   hab$field <- 1 
-  # plot(hab) (unnecessary unless you want to plot each layer as the loop runs)
+  # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
   #We rasterize hab subset in each stack, based on raster layer. We transfer values from hab$field. Lcov types outside of the respective layer (background) are assigned NA. We calc distance from each cell to nearest respective lcov type, creating a dist-based raster layer.
   rasterList[[i]] <- distance(rasterize(hab, template.raster, field = hab$field, background = NA))
   #Creating list of dist-based raster layers, naming each element after corresponding lcov type.
@@ -146,12 +144,12 @@ rsfData_summer2022 <- Summer_2022_locs %>%
          DT = DT.GMT-lubridate::hours(5)) %>% 
   #Nesting by band number into new column called indData.
   nest(indData = !band_numb) %>% 
-     #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
   mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
   filter(n.locs > 30) %>%
-     #making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of coveys over time. Map applies the function to each nested indData within the tibble.
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
   mutate(indData = map(indData, function(x){
-    #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
     x %>%
       make_track(.x = easting,
                  .y = northing,
@@ -165,16 +163,20 @@ rsfData_summer2022 <- Summer_2022_locs %>%
   #Unnesting data back into original rows.
   unnest(indData)
 
+#Creating column case are TRUEs (known points) have value of 1 and Falses (random points) have value of 0. Standardizing our covariates around center.
 rsfData_modified_summer2022 <- rsfData_summer2022 %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
   data.frame()
 
-pop.rsf_summer2022 <- glmer(case ~ AG + HW + PP + NPF+ SS + UM + WL + (1|band_numb),
+
+#Fitting glmm 
+pop.rsf_summer2022 <- glmer(case ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
                  data = rsfData_modified_summer2022,
                  na.action = "na.pass",
                  family = "binomial")
  
+#Viewing summary 
 summary(pop.rsf_summer2022) 
 ```
 
@@ -259,7 +261,7 @@ rsfData_modified_winter_21 <- rsfData_winter_21 %>%
 
 
 #Fitting glmm, 
-pop.rsf_winter_21 <- glmer(case ~ AG + HW +  NPF + PP + SS + UM + WL + (1|covey_id),
+pop.rsf_winter_21 <- glmer(case ~ AG + HW +  NP + PP + SS + UM + WL + (1|covey_id),
                  data = rsfData_modified_winter_21,
                  na.action = "na.pass",
                  family = "binomial")
