@@ -45,7 +45,7 @@ habitat$HABITAT <- gsub("PINE/HARDWOOD", "NPF", habitat$HABITAT)
 habitat$HABITAT <- gsub("PINE PLANTATION", "PP", habitat$HABITAT)
 habitat$HABITAT <- gsub("WETLAND", "WL", habitat$HABITAT)
 habitat$HABITAT <- gsub("HARDWOOD", "HW", habitat$HABITAT)
-habitat$HABITAT <- gsub("HW/PINE FOREST", "HW", habitat$HABITAT)
+habitat$HABITAT <- gsub("HW/PINE FOREST", "NPF", habitat$HABITAT)
 habitat$HABITAT <- gsub("NATURAL PINE", "NPF", habitat$HABITAT)
 habitat$HABITAT <- gsub("WILDLIFE FOOD PLOT", "AG", habitat$HABITAT)
 habitat$HABITAT <- gsub("NP/PINE FOREST", "NPF", habitat$HABITAT)
@@ -73,7 +73,7 @@ levels(as.factor(habitat$HABITAT))
 #Creating template raster. Here, we specify crs, extent, and resolution of our raster. For some reason, model won't run with a resolution below 3 meters. This shouldn't be an issues w telemetry.
 template.raster <- raster(crs = habitat@proj4string,
        ext = extent(habitat@bbox),
-       res = 3)
+       res = 10)
 
 
 #Rasterizing the map of study site, filling with land cover type (as numeric factors)
@@ -89,7 +89,7 @@ plot(habitat.raster)
 plot(habitat, col = as.factor(habitat$HABITAT))
 ```
 
-Creating our stack of raster layers.
+Creating our stack of raster layers. This will be used in both Summer 2022 and Winter 2021/22 RSFs.
 ```{r}
 #assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
 habitats <- levels(as.factor(habitat$HABITAT))
@@ -121,6 +121,85 @@ distanceStack <- stack(rasterList)
 
 #Plotting our ten distance-based raster layers.
 plot(distanceStack)
+```
+
+Summer 2022. 
+```{r}
+Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/All_Summer_2022_LOCS_CLEAN_NO_Nests.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status != "D") %>%
+  mutate(date = lubridate::as_date(date))
+
+
+#Taking a quick look.
+#Summer_2022_locs %>%
+  #view()
+
+#Creating our RSF data. 
+#Basing rsf function Summer 2022 data.
+rsfData_summer2022 <- Summer_2022_locs %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+     #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 30) %>%
+     #making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of coveys over time. Map applies the function to each nested indData within the tibble.
+  mutate(indData = map(indData, function(x){
+    #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916) %>%
+      #Below we generate x random points within each NOBO's MCP home range.
+      random_points(., hr = "mcp", n = nrow(x) * 5, level = 1) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData)
+
+rsfData_modified_summer2022 <- rsfData_summer2022 %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
+  data.frame()
+
+pop.rsf_summer2022 <- glmer(case ~ AG + HW + PP + NPF+ SS + UM + WL + (1|band_numb),
+                 data = rsfData_modified_summer2022,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+summary(pop.rsf_summer2022) 
+```
+
+Trying dredge() on Summer 2022 data.
+```{r}
+#options(na.action = "na.fail")
+
+pop.dre_summer_2022 <- dredge(pop.rsf_summer2022, fixed = ~(1|band_numb))
+
+competing_summer_2022 <- model.sel(pop.dre_summer_2022, subset = delta < 2)
+
+competing_summer_2022 %>%
+  view()
+
+# Get variable importance from the model selection table
+var_importance_summer_2022 <- sw(competing_summer_2022)
+
+# View variable importance
+print(var_importance_summer_2022)
+```
+
+```{r}
+rsfData_modified_summer2022 %>%
+ nest(nest1 = !c(band_numb, case_)) %>% #nth(30) 
+ mutate(summaryList = map(nest1, ~summary(.))) %>% pull(summaryList)
 ```
 
 Winter 2021/22
@@ -198,7 +277,7 @@ library(ggplot2)
 summary(pop.rsf_winter_21)
 ```
 
-Trying dredge
+Trying dredge. Winter 2021/22
 ```{r}
 #Filling empty values with NAs before dredge()
 #options(na.action = "na.fail")
@@ -272,66 +351,3 @@ model_aic_df
 summary(models[[20]])
 ```
 
-Summer 2022. Repeating the process.
-```{r}
-Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/All_Summer_2022_LOCS_CLEAN.xlsx", setclass = "tibble") %>%
-  clean_names() %>%
-  filter(status != "D") %>%
-  mutate(date = lubridate::as_date(date))
-
-
-#Taking a quick look.
-#Summer_2022_locs %>%
-  #view()
-
-#Creating our RSF data. The "#x <- rsfData$indData[[1]] is meant to be a "bugfinder", and muted unless needed.
-rsfData_summer2022 <- Summer_2022_locs %>% 
-  as_tibble() %>%
-  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
-         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
-         DT = DT.GMT-lubridate::hours(5)) %>% 
-  nest(indData = !band_numb) %>% 
-  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
-  filter(n.locs > 5) %>%
-  mutate(indData = map(indData, function(x){
-    # x <- rsfData$indData[[1]]
-    x %>%
-      make_track(.x = easting,
-                 .y = northing,
-                 .t = DT,
-                 crs = 26916) %>%
-      random_points(., hr = "mcp", n = nrow(x) * 10, level = 1) %>%
-      extract_covariates(distanceStack)
-  })) %>%
-  unnest(indData)
-
-rsfData_modified_summer2022 <- rsfData_summer2022 %>% 
-  mutate(case = ifelse(case_ == T, 1, 0)) %>%
-  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
-  data.frame()
-
-pop.rsf_summer2022 <- glmer(case ~ AG + HW + NPF + PP + SS + UM + WL + (1|band_numb),
-                 data = rsfData_modified_summer2022,
-                 na.action = "na.pass",
-                 family = "binomial")
-
-
-summary(pop.rsf_summer2022) 
-```
-
-```{r}
-#options(na.action = "na.fail")
-
-pop.dre_summer_2022 <- dredge(pop.rsf_summer2022, fixed = ~(1|band_numb))
-
-competing_summer_2022 <- model.sel(pop.dre_summer_2022, subset = delta < 2)
-
-competing_summer_2022 %>%
-  view()
-
-# Get variable importance from the model selection table
-var_importance_summer_2022 <- sw(competing_summer_2022)
-
-# View variable importance
-print(var_importance_summer_2022)
-```
