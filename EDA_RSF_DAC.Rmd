@@ -263,6 +263,26 @@ coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coeffici
 # Displaying results
 print(coefficients_data)
 
+# Load the necessary library
+library(bayesplot)
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes, 
+           pars = c("b_Intercept", "b_AG", "b_PP", "b_NP", "b_HW", "b_SS", "b_UM", "b_WL"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate")
+
+# For the Gelman-Rubin diagnostic
+gelman_diag <- rstan::monitor(pop.rsf_summer2022_bayes, 
+                              pars = c("b_Intercept", "b_AG", "b_PP", "b_NP", "b_HW", "b_SS", "b_UM", "b_WL"),
+                              probs = c(.025, .975))
+
+print(gelman_diag)
+
+
 ```
 
 Winter 2021/22
