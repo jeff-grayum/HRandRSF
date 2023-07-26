@@ -197,11 +197,64 @@ var_importance_summer_2022 <- sw(competing_summer_2022)
 # View variable importance
 print(var_importance_summer_2022)
 ```
-
+Trouble shooting 
 ```{r}
 rsfData_modified_summer2022 %>%
  nest(nest1 = !c(band_numb, case_)) %>% #nth(30) 
  mutate(summaryList = map(nest1, ~summary(.))) %>% pull(summaryList)
+```
+It seems we will get the isSingular warning due to the fact that many of our MCP home ranges are only composed of 1-2 landcover types, generating a perfect model fit. A bayesian approach may get around this issue. 
+```{r}
+#Using the 'brm' function from the 'brms' package to run a Bayesian regression model.
+
+pop.rsf_summer2022_bayes <- brm(
+
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points), and each row in the dataset
+  #is considered a single trial. Predictor variables are our land cover types, band number is our random effect.
+  case | trials(1) ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022,
+
+  #Specifying a binomial model. Bernoulli may be more appropriate based on the warning?
+  family = "binomial",
+
+  #Setting our priors.
+  prior = c(
+    set_prior("normal(0, 10)", class = "Intercept"), # Prior for the intercept. Normal distribution centered around 0, st dev of 10
+    set_prior("normal(0, 10)", class = "b"),         # Prior for the fixed effects (land covery types)
+    set_prior("normal(0, 10)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 2000 iterations. A good balance of speed and accuracy.
+  iter = 2000,
+
+  # 4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes)
+
+# Get the summary of the model
+model_summary <- summary(pop.rsf_summer2022_bayes)
+
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
 ```
 
 Winter 2021/22
@@ -352,4 +405,7 @@ model_aic_df
 
 summary(models[[20]])
 ```
+
+
+
 
