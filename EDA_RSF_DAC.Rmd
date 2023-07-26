@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Loading libraries.
 ```{r}
+#### Libraries #### 
 library(raster)
 library(amt)
 library(dplyr)
@@ -204,13 +205,15 @@ print(var_importance_summer_2022)
 ```
 Trouble shooting 
 ```{r}
+#### Trouble shooting summer data #### 
+
 rsfData_modified_summer2022 %>%
  nest(nest1 = !c(band_numb, case_)) %>% #nth(30) 
  mutate(summaryList = map(nest1, ~summary(.))) %>% pull(summaryList)
 ```
 It seems we will get the isSingular warning due to the fact that many of our MCP home ranges are only composed of 1-2 landcover types, generating a perfect model fit. A bayesian approach may get around this issue. 
 ```{r}
-##### Using the 'brm' function from the 'brms' package to run a Bayesian regression model.#### 
+##### Bayesian: Summer data. Using the 'brm' function from the 'brms' package to run a Bayesian regression model.#### 
 pop.rsf_summer2022_bayes <- brm(
 
   #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
@@ -230,10 +233,10 @@ pop.rsf_summer2022_bayes <- brm(
   ),
 
   #Specifying 2000 iterations. A good balance of speed and accuracy.
-  iter = 2000,
+  iter = 4000,
 
   # 4 MCMC chains seems to be a common choice for robust modeling.
-  chains = 4
+  chains = 6
 )
 
 #Printing summary of results.
@@ -340,7 +343,7 @@ summary(pop.rsf_winter_21)
 Trying dredge. Winter 2021/22
 ```{r}
 
-#### Tring dredge for winter 2021/22 data ####
+#### Trying dredge for winter 2021/22 data ####
 #Filling empty values with NAs before dredge()
 #options(na.action = "na.fail")
 
