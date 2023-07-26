@@ -29,7 +29,7 @@ library(tidyverse)
 
 Importing shapefile of study site and renaming layers, converting to raster layer, establishing template for mapping.
 ```{r}
-#Importing shapefile of study site.
+##### Importing map of study site as a shape file #### 
 habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/BobwhiteData/Simplified_LandCover/Simplified_LandCover.shp")
 
 # habitat <- raster::shapefile("F:/BOBWHITE_DATA/BobwhiteData/Simplified_LandCover/Simplified_LandCover.shp")
@@ -89,6 +89,7 @@ plot(habitat, col = as.factor(habitat$HABITAT))
 
 Creating our stack of raster layers. This will be used in both Summer 2022 and Winter 2021/22 RSFs.
 ```{r}
+#### Creating raster stack #### 
 #assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
 habitats <- levels(as.factor(habitat$HABITAT))
 
@@ -123,6 +124,8 @@ plot(distanceStack)
 
 Summer 2022. 
 ```{r}
+
+#### Importing summer points and making model #### 
 Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/All_Summer_2022_LOCS_CLEAN_NO_Nests.xlsx", setclass = "tibble") %>%
   clean_names() %>%
   filter(status != "D") %>%
@@ -182,6 +185,8 @@ summary(pop.rsf_summer2022)
 
 Trying dredge() on Summer 2022 data.
 ```{r}
+
+#### Trying dredge for summer data #### 
 #options(na.action = "na.fail")
 
 pop.dre_summer_2022 <- dredge(pop.rsf_summer2022, fixed = ~(1|band_numb))
@@ -205,24 +210,22 @@ rsfData_modified_summer2022 %>%
 ```
 It seems we will get the isSingular warning due to the fact that many of our MCP home ranges are only composed of 1-2 landcover types, generating a perfect model fit. A bayesian approach may get around this issue. 
 ```{r}
-#Using the 'brm' function from the 'brms' package to run a Bayesian regression model.
-
+##### Using the 'brm' function from the 'brms' package to run a Bayesian regression model.#### 
 pop.rsf_summer2022_bayes <- brm(
 
-  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points), and each row in the dataset
-  #is considered a single trial. Predictor variables are our land cover types, band number is our random effect.
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
   case | trials(1) ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
 
   #Specifying our dataset
   data = rsfData_modified_summer2022,
 
-  #Specifying a binomial model. Bernoulli may be more appropriate based on the warning?
+  #Specifying a binomial model. 
   family = "binomial",
 
-  #Setting our priors.
+  #Setting our priors. We're using a fairly wide distribution (SD=10) centered around 0, which implies we know little about the parameters before starting.
   prior = c(
-    set_prior("normal(0, 10)", class = "Intercept"), # Prior for the intercept. Normal distribution centered around 0, st dev of 10
-    set_prior("normal(0, 10)", class = "b"),         # Prior for the fixed effects (land covery types)
+    set_prior("normal(0, 10)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 10)", class = "b"),         # Prior for the fixed effects (land cover types)
     set_prior("normal(0, 10)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
   ),
 
@@ -239,6 +242,8 @@ summary(pop.rsf_summer2022_bayes)
 # Get the summary of the model
 model_summary <- summary(pop.rsf_summer2022_bayes)
 
+
+#Below we calculate our logs odds ratios.
 # Extract the fixed effects (estimates) from the model summary
 fixed_effects <- model_summary$fixed
 
@@ -259,7 +264,7 @@ print(coefficients_data)
 
 Winter 2021/22
 ```{r}
-#Importing our winter locations as a tibble.
+#####Importing our winter locations as a tibble. Building model ####
 winter_2021_22_locs <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/All_Winter_2021_22_Locs_Clean.xlsx", setclass = "tibble") %>%
   clean_names() %>%
   filter(status != "D") %>%
@@ -334,6 +339,8 @@ summary(pop.rsf_winter_21)
 
 Trying dredge. Winter 2021/22
 ```{r}
+
+#### Tring dredge for winter 2021/22 data ####
 #Filling empty values with NAs before dredge()
 #options(na.action = "na.fail")
 
@@ -354,6 +361,8 @@ print(var_importance)
 
 Ok, now lets try plugging in our candidate models instead of using dredge. Winter 2021/22 below.
 ```{r}
+
+#### Candidate models for winter data #### 
 # Create a vector to store each of your models
 model_formulas_winter <- c(
   "case ~ AG + NP + PP + PH + SS + HW +(1|covey_id)",
