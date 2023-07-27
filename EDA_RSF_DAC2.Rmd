@@ -1,0 +1,495 @@
+---
+title: "RSF_EDA_FIXED"
+output: html_document
+date: "2023-05-31"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Loading libraries.
+```{r}
+#### Libraries #### 
+
+library(raster)
+library(amt)
+library(dplyr)
+library(tibble)
+library(purrr)
+library(tidyr)
+library(lme4)
+library(lmerTest)
+library(janitor)
+library(rio)
+library(stringr)
+library(MuMIn)
+library(tidyverse)
+library(bayesplot)
+library(ggeffects)
+library(ggplot2)
+library(brms)
+```
+
+Importing shapefile of study site, renaming and lumping layers, converting to raster layer, establishing template for raster stack.
+```{r}
+##### Importing map of study site as a shape file #### 
+
+habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/BobwhiteData/Simplified_LandCover/Simplified_LandCover.shp")
+
+#Below is Daniel Crawford's code for importing on his setup
+ #habitat <- raster::shapefile("F:/BOBWHITE_DATA/BobwhiteData/Simplified_LandCover/Simplified_LandCover.shp")
+
+
+#Renaming landcover types to model friendly terms. Lumping landcover types w similar understory vegetation.
+habitat$HABITAT <- gsub("AGRICULTURAL", "AG", habitat$HABITAT)
+habitat$HABITAT <- gsub("SHRUB/SCRUB", "SS", habitat$HABITAT)
+habitat$HABITAT <- gsub("URBAN/MOWED", "UM", habitat$HABITAT)
+habitat$HABITAT <- gsub("PINE/HARDWOOD", "NP", habitat$HABITAT) #This layer is >50% natural pine (by basal area)
+habitat$HABITAT <- gsub("PINE PLANTATION", "PP", habitat$HABITAT)
+habitat$HABITAT <- gsub("WETLAND", "WL", habitat$HABITAT)
+habitat$HABITAT <- gsub("HARDWOOD", "HW", habitat$HABITAT)
+habitat$HABITAT <- gsub("HW/PINE FOREST", "HW", habitat$HABITAT) #This layer is >50% HW (by basal area)
+habitat$HABITAT <- gsub("NATURAL PINE", "NP", habitat$HABITAT)
+habitat$HABITAT <- gsub("WILDLIFE FOOD PLOT", "AG", habitat$HABITAT)
+habitat$HABITAT <- gsub("NP/PINE FOREST", "NP", habitat$HABITAT)
+
+#Let's count the land cover types.
+habitat %>%
+  as.data.frame() %>%
+  count(HABITAT, sort = T) %>%
+  print()
+
+
+#Checking the extent of the bounding box.
+extent(habitat@bbox)
+
+#Creating a column that treats land cover (HABITAT) types as a numeric factor.
+habitat$hab.factor <- as.numeric(as.factor(habitat$HABITAT))
+
+
+#Viewing levels (landc over types aka HABITAT)
+levels(as.factor(habitat$HABITAT))
+
+#Quick look
+#head(habitat)
+
+#Creating template raster. Here, we specify crs, extent, and resolution of our raster. For some reason, model won't run with a resolution below 3 meters. This shouldn't be an issues w telemetry data.
+template.raster <- raster(crs = habitat@proj4string,
+       ext = extent(habitat@bbox),
+       res = 10)
+
+
+#Rasterizing the map of study site, filling with land cover type (as numeric factors). Pretty sure this is unnecessary, as it is handled in our for() loop later.
+habitat.raster <- rasterize(x = habitat,
+                            y = template.raster,
+                            field = habitat$hab.factor)
+
+#plotting habitat raster habitat raster
+plot(habitat.raster)
+#windows()
+
+#Viewing habitat shapefile. Land cover types here are now numeric values.
+plot(habitat, col = as.factor(habitat$HABITAT))
+```
+
+Creating our stack of raster layers. This will be used in both our Summer 2022 and Winter 2021/22 RSFs.
+```{r}
+#### Creating raster stack #### 
+
+#Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
+habitats <- levels(as.factor(habitat$HABITAT))
+
+#Creating a raster list. This will be used in our for loop.
+rasterList <- list()
+
+#Creating our for loop. This creates a distance-based raster layer for each of our seven lcov types.
+#Each raster cell in a given lcov layer will hold the distance to the nearest respective lcov type. This value will be 0 if the cell is within the lcov type. 
+for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
+  # i <- 1 (debugger, leave muted unless needed)
+  #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
+  hab <- subset(habitat, HABITAT == habitats[i])   
+  #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
+  hab$field <- 1 
+  # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
+  #We rasterize hab subset in each stack, based on raster layer. We transfer values from hab$field. Lcov types outside of the respective layer (background) are assigned NA. We calc distance from each cell to nearest respective lcov type, creating a dist-based raster layer.
+  rasterList[[i]] <- distance(rasterize(hab, template.raster, field = hab$field, background = NA))
+  #Creating list of dist-based raster layers, naming each element after corresponding lcov type.
+  names(rasterList)[i] <- habitats[i]
+}
+
+#This extracts the extent of each raster layer in our list.
+lapply(rasterList, extent)
+
+#Now we stack our raster layers.
+distanceStack <- stack(rasterList)
+
+#Plotting our ten distance-based raster layers.
+plot(distanceStack)
+```
+
+Summer 2022 data. 
+```{r}
+#### Importing summer locations, making tibble for RSF model, viewing results #### 
+
+Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/All_Summer_2022_LOCS_CLEAN_NO_Nests.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status != "D") %>%
+  mutate(date = lubridate::as_date(date))
+# Summer_2022_locs <- rio::import("F:/BOBWHITE_DATA/Clean/All_Summer_2022_LOCS_CLEAN_NO_Nests.xlsx", setclass = "tibble") %>%
+#   clean_names() %>%
+#   filter(status != "D") %>%
+#   mutate(date = lubridate::as_date(date))
+
+
+#Taking a quick look.
+#Summer_2022_locs %>%
+  #view()
+
+#Creating tibble for RSF, includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
+rsfData_summer2022 <- Summer_2022_locs %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 30) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+
+      #Below we generate x random points within each NOBO's KDE home range.
+      random_points(y, n = nrow(x) * 20, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+# rsfData_summer2022 %>% arrange(desc(case_))
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2022 <- rsfData_summer2022 %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+
+#Fitting glm
+pop.rsf_summer2022 <- glmer(case ~ AG + NP + PP +  HW + SS + UM + WL + (1|band_numb),
+                 data = rsfData_modified_summer2022,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(pop.rsf_summer2022) 
+```
+
+Trying dredge() on Summer 2022 data.
+```{r}
+#### Trying dredge for summer data #### 
+
+pop.dre_summer_2022 <- dredge(pop.rsf_summer2022, fixed = ~(1|band_numb))
+
+competing_summer_2022 <- model.sel(pop.dre_summer_2022[1:9])#, subset = "delta" < 2)
+
+# plot(model.avg(competing_summer_2022))
+
+competing_summer_2022 %>%
+  view()
+
+# Get variable importance from the model selection table
+var_importance_summer_2022 <- sw(competing_summer_2022)
+
+# View variable importance
+print(var_importance_summer_2022)
+```
+
+Trouble shooting the "isSingular" warning.
+```{r}
+#### Trouble shooting summer data #### 
+
+rsfData_modified_summer2022 %>%
+ nest(nest1 = !c(band_numb, case_)) %>%  
+ mutate(summaryList = map(nest1, ~summary(.))) %>% pull(summaryList)
+
+covey.tib <- rsfData_modified_summer2022 %>%
+   nest(coveyData = !c(band_numb,case)) %>%
+   mutate(ag.min = map_dbl(coveyData, ~min(.$AG)),
+        ag.max = map_dbl(coveyData, ~max(.$AG)),
+ hw.min = map_dbl(coveyData, ~min(.$HW)),
+         hw.max = map_dbl(coveyData, ~max(.$HW)),
+ np.min = map_dbl(coveyData, ~min(.$NP)),
+        np.max = map_dbl(coveyData, ~max(.$NP)),
+ pp.min = map_dbl(coveyData, ~min(.$PP)),
+         pp.max = map_dbl(coveyData, ~max(.$PP)),
+  ss.min = map_dbl(coveyData, ~min(.$SS)),
+        ss.max = map_dbl(coveyData, ~max(.$SS)),
+  um.min = map_dbl(coveyData, ~min(.$UM)),
+        um.max = map_dbl(coveyData, ~max(.$UM)),
+  wl.min = map_dbl(coveyData, ~min(.$WL)),
+         wl.max = map_dbl(coveyData, ~max(.$WL))
+  ) %>%
+   arrange(case) %>%
+   mutate(sample.size = map_dbl(coveyData, ~nrow(.))) %>%
+  mutate(n.unique.values = map_dbl(coveyData, function(x){
+     x %>%
+       pull(NP) %>%
+       table() %>%
+       length()
+     }),
+   value.table = map(coveyData, function(x){
+     x %>%
+       pull(NP) %>%
+       table()
+   })) %>%
+   filter(band_numb == 4827) %>%
+   pull(value.table)
+   View()
+ View(covey.tib)
+```
+
+It seems we will get the isSingular warning due to the fact that many of our MCP home ranges are only composed of 1-2 landcover types, generating a perfect model fit. A bayesian approach may get around this issue. This is over my head at the moment, but it runs. Not robust and "bad science".
+WARNING: A LOT OF THIS IS FROM ChatGPT. DO NOT TRUST. Just curious as to how this compares with results from GLMM.
+```{r}
+##### Bayesian: Summer data. Using the 'brm' function from the 'brms' package to run a Bayesian regression model.#### 
+ names(rsfData_modified_summer2022)
+  
+pop.rsf_summer2022_bayes <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+  # case ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 5)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 5)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 5)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  # 4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes)
+
+# Get the summary of the model
+model_summary_summer2022_bayes <- summary(pop.rsf_summer2022_bayes)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes, 
+           pars = c("b_Intercept", "b_AG", "b_PP", "b_NP", "b_HW", "b_SS", "b_UM", "b_WL"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate")
+
+
+
+```
+
+Winter 2021/22
+```{r}
+#### RSF for Winter 2021/22 data ####
+#Importing locations, filtering out dead birds and birds trapped in March 2022.
+winter_2021_22_locs <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/All_Winter_2021_22_Locs_Clean.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status != "D") %>%
+  mutate(date = lubridate::as_date(date)) %>%
+  rename(covey_id = trap_locat) %>%
+  filter(covey_id < 99) 
+  
+
+# winter_2021_22_locs <- rio::import("F:/BOBWHITE_DATA/Clean/All_Winter_2021_22_Locs_Clean.xlsx", setclass = "tibble") %>%
+#   clean_names() %>%
+#   mutate(date = lubridate::as_date(date))
+
+#Taking a quick look.
+#winter_2021_22_locs %>%
+  #view()
+
+#Creating our RSF data. 
+#Basing rsf function on winter 2021 data
+rsfData_winter_21 <- winter_2021_22_locs %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+  #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by trap_location (covey #) into new column called indData.
+  nest(indData = !covey_id) %>%
+  #Determining number of locs for each covey, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 20) %>%
+  #making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of coveys over time. Map applies the function to each nested indData within the tibble.
+  mutate(indData = map(indData, function(x){
+    # x <- rsfData$indData[[1]] this is a debugger
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916) %>%
+      #Below we generate 5 random points within each covey's MCP home range.
+      random_points(., hr = "mcp", n = nrow(x) * 5, level = 1) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack)
+  })) %>%
+  #unnesting data back into original rows.
+  unnest(indData)
+
+#Mutating column case so TRUEs (known points) are replaced with 1s and Falses (random points) are replaced with 0s. Standardizing our covariates.
+rsfData_modified_winter_21 <- rsfData_winter_21 %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>% 
+  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
+  data.frame()
+
+
+#Fitting glmm, 
+pop.rsf_winter_21 <- glmer(case ~ AG + HW +  NP + PP + SS + UM + WL + (1|covey_id),
+                 data = rsfData_modified_winter_21,
+                 na.action = "na.pass",
+                 family = "binomial")
+
+#rsfData_modified_winter_21 %>%
+ # nest(nest1 = !c(trap_locat, case_)) %>% nth(30)
+ # mutate(summaryList = map(nest1, ~summary(.))) %>% pull(summaryList)
+
+# plot(ggpredict(pop.rsf_winter_21, terms = ~AG*NP))
+
+#Looking at s
+summary(pop.rsf_winter_21)
+```
+
+Trying dredge. Winter 2021/22
+```{r}
+
+#### Trying dredge for winter 2021/22 data ####
+#Filling empty values with NAs before dredge()
+#options(na.action = "na.fail")
+
+#Finding best model using dredge()
+pop.dre_winter_21 <- dredge(pop.rsf_winter_21, fixed = ~(1|covey_id))
+
+#Looking at top models.
+competing_winter_21 <- model.sel(pop.dre_winter_21, subset = delta< 2)
+
+competing_winter_21 %>%
+  view()
+
+#Calculating variable importance.
+var_importance <- sw(competing)
+print(var_importance)
+```
+
+
+Ok, now lets try plugging in our candidate models instead of using dredge. Winter 2021/22 below.
+```{r}
+#### Candidate models for winter data #### 
+
+# Create a vector to store each of your models
+model_formulas_winter <- c(
+  "case ~ AG + NP + PP + PH + SS + HW +(1|covey_id)",
+  "case ~ AG + NP + PP + PH + SS + HW +(1|covey_id)",
+  "case ~ NP + PP + PH + (1|covey_id)",
+  "case ~ AG + NP + PH + SS + (1|covey_id)",
+  "case ~ NP + PH + PP + (1|covey_id)",
+  "case ~ AG + NP + PP + PH + SS + (1|covey_id)",
+  "case ~ AG + NP + PP + PH + SS + HW + (1|covey_id)",
+  "case ~ AG + NP + PP + PH + SS + HW +(1|covey_id)",
+  "case ~ NP + PP + PH + SS + (1|covey_id)",
+  "case ~ NP + PH + (1|covey_id)",
+  "case ~ AG + NP + PH + SS + (1|covey_id)",
+  "case ~ NP + PH + PP + SS + (1|covey_id)",
+  "case ~ AG + NP + PP + SS + (1|covey_id)",
+  "case ~ AG + NP + PP + (1|covey_id)",
+  "case ~ NP + PP + SS + (1|covey_id)",
+  "case ~ AG + NP + PP + PH + SS + (1|covey_id)",
+  "case ~ NP + PP + (1|covey_id)",
+  "case ~ NP + PP + SS + (1|covey_id)",
+  "case ~ AG + SS + (1|covey_id)",
+  "case ~ AG + HW + NP + PP + PH + SS + UM + WL + (1|covey_id)"
+)
+
+# Initialize list to hold models and dataframe to hold AIC values
+models <- list()
+model_aic_df <- data.frame(Model = character(), AIC = numeric())
+
+# Loop through each model, fit the model, store it in the list and AIC in the data frame
+for (i in seq_along(model_formulas_winter)) {
+  model <- glmer(as.formula(model_formulas_winter[i]), 
+                       data = rsfData_modified_winter_21, 
+                       family = binomial(link = "logit"), 
+                       control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+                      )
+  
+  # Store the model in the list
+  models[[model_formulas_winter[i]]] <- model
+  
+  # Compute and store the AIC in the data frame
+  model_aic_df <- rbind(model_aic_df, data.frame(Model = model_formulas_winter[i], AIC = AIC(model)))
+}
+
+# Ensure that the model dataframe is ordered by AIC
+model_aic_df <- model_aic_df[order(model_aic_df$AIC), ]
+
+# View the data frame
+model_aic_df 
+
+summary(models[[20]])
+```
+
+
+
+
