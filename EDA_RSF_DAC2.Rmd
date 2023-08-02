@@ -181,7 +181,7 @@ rsfData_summer2022 <- Summer_2022_locs %>%
   mutate(indData = map2(tracks, kde, function(x,y){
 
       #Below we generate x random points within each NOBO's KDE home range.
-      random_points(y, n = nrow(x) * 20, level=.95, presence = x) %>%
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
       #Extracting covariates (lcov types) of known and random points
       extract_covariates(distanceStack)
   })) %>%
@@ -212,9 +212,11 @@ Trying dredge() on Summer 2022 data.
 
 pop.dre_summer_2022 <- dredge(pop.rsf_summer2022, fixed = ~(1|band_numb))
 
-competing_summer_2022 <- model.sel(pop.dre_summer_2022[1:9])#, subset = "delta" < 2)
+competing_summer_2022 <- model.sel(pop.dre_summer_2022[1:4])#, subset = "delta" < 2)
 
-# plot(model.avg(competing_summer_2022))
+model.avg(competing_summer_2022)
+
+plot(model.avg(competing_summer_2022))
 
 competing_summer_2022 %>%
   view()
