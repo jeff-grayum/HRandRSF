@@ -157,7 +157,7 @@ Summer_2022_locs_all_age_sex %>%
 
 ```
 
-Looking at all sex and age classes first. Creating tibble for RSF, modifying, fitting GLMER(), summary.
+Looking at all sex and age classes first. Creating tibble for RSF, modifying, fitting glmer(), summary.
 ```{r}
 #### Looking at all sex and age classes ####
 
@@ -210,18 +210,22 @@ rsfData_modified_summer2022 <- rsfData_summer2022 %>%
 
 
 #Fitting glm
-pop.rsf_summer2022 <- glmer(case ~ AG + NP + PP +  HW + SS + UM + WL + (1|band_numb),
+pop.rsf_summer2022_all_birds <- glmer(case ~ AG + NP + PP +  HW + SS + UM + WL + (1|band_numb),
                  data = rsfData_modified_summer2022,
                  na.action = "na.pass",
                  family = "binomial")
  
 #Viewing summary 
-summary(pop.rsf_summer2022) 
+summary(pop.rsf_summer2022_all_birds) 
 ```
+ALL BIRDS
+Closer than expected: AG, NP, PP
+Further than expected: WL
 
-Let's try looking at males.
+
+Let's try isolating males using glmer().
 ```{r}
-#### Looking at males only ####
+#### Looking at males only. glmer() ####
 Summer_2022_locs_males <- Summer_2022_locs_all_age_sex %>%
   filter(sex == "M")
 
@@ -282,7 +286,7 @@ pop.rsf_summer2022_males <- glmer(case ~ AG + NP + PP +  HW + SS + UM + WL + (1|
 #Viewing summary 
 summary(pop.rsf_summer2022_males) 
 
-#### Looking at juv males only ####
+#### Looking at juv males only, glmer ####
 Summer_2022_locs_males_juv <- Summer_2022_locs_all_age_sex %>%
   filter(sex == "M",
          age == "J")
@@ -345,7 +349,7 @@ pop.rsf_summer2022_males_juv <- glmer(case ~ AG + NP + PP +  HW + SS + UM + WL +
 summary(pop.rsf_summer2022_males_juv) 
 
 
-#### Looking at adult males only ####
+#### Looking at adult males only, glmer ####
 Summer_2022_locs_males_adult <- Summer_2022_locs_all_age_sex %>%
   filter(sex == "M",
          age == "A")
@@ -407,9 +411,636 @@ pop.rsf_summer2022_males_adult <- glmer(case ~ AG + NP + PP +  HW + SS + UM + WL
 #Viewing summary 
 summary(pop.rsf_summer2022_males_adult) 
 
+```
+ALL MALES glmer:
+closer than exp: NP, PP, SS
+further than exp: HW
 
+JUV MALES glmer:
+closer than exp: AG, NP
+further than exp: none
+
+ADULT MALES glmer:
+closer than exp: PP, SS
+furthern than exp: HW
+
+
+Isolating males again, but with Bayesian framework.
+```{r}
+#### Looking at all males, Bayesian ####
+pop.rsf_summer2022_bayes_males <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+  # case ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022_males,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 5)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 5)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 5)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  # 4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+  #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.95)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes_males)
+
+# Get the summary of the model
+model_summary_summer2022_bayes_males <- summary(pop.rsf_summer2022_bayes_males)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes_males$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes_males, 
+           pars = c("b_Intercept", "b_AG", "b_PP", "b_NP", "b_HW", "b_SS", "b_UM", "b_WL"),
+           n_warmup = 5000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate")
+
+
+#### Isolating juv males, Bayesian ####
+pop.rsf_summer2022_bayes_males_juv <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+  # case ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022_males_juv,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 5)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 5)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 5)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  # 4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.95)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes_males_juv)
+
+# Get the summary of the model
+model_summary_summer2022_bayes_males_juv <- summary(pop.rsf_summer2022_bayes_males_juv)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes_males_juv$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes_males_juv, 
+           pars = c("b_Intercept", "b_AG", "b_PP", "b_NP", "b_HW", "b_SS", "b_UM", "b_WL"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate")
+
+
+#### Isolating adult males, Bayesian ####
+
+pop.rsf_summer2022_bayes_males_adult <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+  # case ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022_males_adult,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 5)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 5)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 5)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  # 4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.98)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes_males_adult)
+
+# Get the summary of the model
+model_summary_summer2022_bayes_males_adult <- summary(pop.rsf_summer2022_bayes_males_adult)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes_males_adult$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes_males_adult, 
+           pars = c("b_Intercept", "b_AG", "b_PP", "b_NP", "b_HW", "b_SS", "b_UM", "b_WL"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate")
 
 ```
+ALL MALES BAYES:
+closer than exp: PP, NP, SS
+further than exp: none (HW avoided in glmer...very nearly avoided in Bayes)
+
+JUV MALES BAYES:
+closer than exp: AG, NP.
+further than exp: none (same as glmer)
+
+ADULT MALES BAYES:
+closer than exp: PP, SS
+further than exp: HW
+
+
+Now, let's isolate females. glmer()
+```{r}
+#### Looking at females only. glmer() ####
+Summer_2022_locs_females <- Summer_2022_locs_all_age_sex %>%
+  filter(sex == "F")
+
+#Creating tibble for RSF, includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
+rsfData_summer2022_females <- Summer_2022_locs_females %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 30) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+
+      #Below we generate x random points within each NOBO's KDE home range.
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+# rsfData_summer2022 %>% arrange(desc(case_))
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2022_females <- rsfData_summer2022_females %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+
+#Fitting glm
+pop.rsf_summer2022_females <- glmer(case ~ AG + NP + PP +  HW + SS + UM + WL + (1|band_numb),
+                 data = rsfData_modified_summer2022_females,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(pop.rsf_summer2022_females) 
+
+#### Looking at juv females only, glmer() ####
+Summer_2022_locs_females_juv <- Summer_2022_locs_all_age_sex %>%
+  filter(sex == "F",
+         age == "J")
+
+#Creating tibble for RSF, includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
+rsfData_summer2022_females_juv <- Summer_2022_locs_females_juv %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 30) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+
+      #Below we generate x random points within each NOBO's KDE home range.
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+# rsfData_summer2022 %>% arrange(desc(case_))
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2022_females_juv <- rsfData_summer2022_females_juv %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+
+#Fitting glm
+pop.rsf_summer2022_females_juv <- glmer(case ~ AG + NP + PP +  HW + SS + UM + WL + (1|band_numb),
+                 data = rsfData_modified_summer2022_females_juv,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(pop.rsf_summer2022_females_juv) 
+
+
+#### Looking at adult females only, glmer() ####
+Summer_2022_locs_females_adult <- Summer_2022_locs_all_age_sex %>%
+  filter(sex == "F",
+         age == "A")
+
+#Creating tibble for RSF, includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
+rsfData_summer2022_females_adult <- Summer_2022_locs_females_adult %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 30) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+
+      #Below we generate x random points within each NOBO's KDE home range.
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+# rsfData_summer2022 %>% arrange(desc(case_))
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2022_females_adult <- rsfData_summer2022_females_adult %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+
+#Fitting glm
+pop.rsf_summer2022_females_adult <- glmer(case ~ AG + NP + PP +  HW + SS + UM + WL + (1|band_numb),
+                 data = rsfData_modified_summer2022_females_adult,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(pop.rsf_summer2022_females_adult) 
+```
+ALL FEMALES glmer():
+closer than exp: AG, NP, PP
+further than exp: WL, SS
+
+JUV FEMALES glmer():
+closer than exp: AG, NP, PP
+further than exp: WL, SS
+
+ADULT FEMALES glmer(): 
+closer than exp: AG, NP, PP
+further than exp: WL
+
+
+Now lets isolate females, using a Bayesian framework.
+```{r}
+#### Looking at all females, Bayesian ####
+pop.rsf_summer2022_bayes_females <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+  # case ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022_females,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 5)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 5)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 5)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  # 4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+  #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.95)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes_females)
+
+# Get the summary of the model
+model_summary_summer2022_bayes_females <- summary(pop.rsf_summer2022_bayes_females)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes_females$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes_females, 
+           pars = c("b_Intercept", "b_AG", "b_PP", "b_NP", "b_HW", "b_SS", "b_UM", "b_WL"),
+           n_warmup = 5000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate")
+
+
+#### Isolating juv females, Bayesian ####
+pop.rsf_summer2022_bayes_females_juv <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+  # case ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022_females_juv,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 5)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 5)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 5)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  # 4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.95)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes_females_juv)
+
+# Get the summary of the model
+model_summary_summer2022_bayes_females_juv <- summary(pop.rsf_summer2022_bayes_females_juv)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes_females_juv$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes_females_juv, 
+           pars = c("b_Intercept", "b_AG", "b_PP", "b_NP", "b_HW", "b_SS", "b_UM", "b_WL"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate")
+
+
+#### Isolating adult females, Bayesian ####
+pop.rsf_summer2022_bayes_females_adult <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+  # case ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022_females_adult,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 5)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 5)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 5)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  # 4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.95)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes_females_adult)
+
+# Get the summary of the model
+model_summary_summer2022_bayes_females_adult <- summary(pop.rsf_summer2022_bayes_females_adult)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes_females_adult$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes_females_adult, 
+           pars = c("b_Intercept", "b_AG", "b_PP", "b_NP", "b_HW", "b_SS", "b_UM", "b_WL"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate")
+
+```
+ALL FEMALES BAYES:
+closer than exp: AG, PP, NP
+further than exp: SS, WL
+
+JUV FEMALES BAYES:
+closer than exp: AG, PP, NP
+furthern than exp: SS, WL
+
+ADULT FEMALES BAYES:
+closer than exp: AG, PP, NP,
+further than exp: WL
+
+
 
 
 Trying dredge() on Summer 2022 data.
@@ -482,12 +1113,12 @@ It seems we will get the isSingular warning due to the fact that many of our MCP
 WARNING: A LOT OF THIS IS FROM ChatGPT. DO NOT TRUST. Just curious as to how this compares with results from GLMM.
 ```{r}
 ##### Bayesian: Summer data. Using the 'brm' function from the 'brms' package to run a Bayesian regression model.#### 
- names(rsfData_modified_summer2022)
+names(rsfData_modified_summer2022)
   
 pop.rsf_summer2022_bayes <- brm(
   
   #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
-  case | trials(1) ~ AG + PP + NP + HW + SS + UM + WL + band_numb,
+  case | trials(1) ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
   # case ~ AG + PP + NP + HW + SS + UM + WL + (1|band_numb),
 
   #Specifying our dataset
@@ -507,7 +1138,9 @@ pop.rsf_summer2022_bayes <- brm(
   iter = 10000,
 
   # 4 MCMC chains seems to be a common choice for robust modeling.
-  chains = 4
+  chains = 4,
+  
+  control = list(adapt_delta = 0.9)
 )
 
 #Printing summary of results.
