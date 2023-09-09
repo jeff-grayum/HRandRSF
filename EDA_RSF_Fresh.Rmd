@@ -632,7 +632,7 @@ pop.rsf_summer2022_bayes <- brm(
   ),
 
   #Specifying 10000 iterations. A good balance of speed and accuracy.
-  iter = 10000,
+  iter = 4000,
 
   #4 MCMC chains seems to be a common choice for robust modeling.
   chains = 4,
@@ -665,8 +665,25 @@ coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coeffici
 # Displaying results
 print(coefficients_data)
 
-# Load the required library for plotting
-library(bayesplot)
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+# Filter out the intercept and plot
+coefficients_data_no_intercept %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('Beta coefficients for all age and sex classes') +
+  theme_minimal()
+
 
 # For the trace plots
 color_scheme_set("brightblue")
