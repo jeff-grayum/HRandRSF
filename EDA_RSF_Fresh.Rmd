@@ -10,11 +10,6 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
 ```{r}
 #### Libraries #### 
@@ -141,9 +136,9 @@ Summer_2022_locs_all_age_sex %>%
 
 ```
 
-Looking at all sex and age classes first. Creating tibble for RSF, modifying, fitting glmer(), summary.
+Creating tibbles for RSF, dividing by age and sex.
 ```{r}
-#### Creating Summer RSF, Looking at all sex and age classes with glmer() ####
+#### Creating Summer 2022 tibbles for RSFs ####
 
 #Creating tibble for RSF, includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
 rsfData_summer2022 <- Summer_2022_locs_all_age_sex %>% 
@@ -185,32 +180,14 @@ rsfData_summer2022 <- Summer_2022_locs_all_age_sex %>%
   #Unnesting data back into original rows.
   unnest(indData) 
 
-# rsfData_summer2022 %>% arrange(desc(case_))
 
 #Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
 rsfData_modified_summer2022 <- rsfData_summer2022 %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
 
-#Writing into an excel spreadsheet.
-#write_xlsx(rsfData_modified_summer2022, "/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/rsfData_modified_summer2022_10RandPoints.xlsx")
 
-#Fitting glm
-pop.rsf_summer2022_all_birds <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
-                 data = rsfData_modified_summer2022,
-                 na.action = "na.pass",
-                 family = "binomial")
- 
-#Viewing summary 
-summary(pop.rsf_summer2022_all_birds) 
-```
-ALL BIRDS SUMMER 2022 GLMER()
-Closer than expected: NP_BU, PP_UB, SS_UB
-Further than expected: SS_BU
-
-Let's try isolating males using glmer().
-```{r}
-#### Looking at males only. glmer() ####
+#Isolating males
 Summer_2022_locs_males <- Summer_2022_locs_all_age_sex %>%
   filter(sex == "M")
 
@@ -254,24 +231,13 @@ rsfData_summer2022_males <- Summer_2022_locs_males %>%
   #Unnesting data back into original rows.
   unnest(indData) 
 
-# rsfData_summer2022 %>% arrange(desc(case_))
-
 #Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
 rsfData_modified_summer2022_males <- rsfData_summer2022_males %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
 
 
-#Fitting glm
-pop.rsf_summer2022_males <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
-                 data = rsfData_modified_summer2022_males,
-                 na.action = "na.pass",
-                 family = "binomial")
- 
-#Viewing summary 
-summary(pop.rsf_summer2022_males) 
-
-#### Looking at juv males only, glmer ####
+#Isolating Juve Males
 Summer_2022_locs_males_juv <- Summer_2022_locs_all_age_sex %>%
   filter(sex == "M",
          age == "J")
@@ -307,7 +273,7 @@ rsfData_summer2022_males_juv <- Summer_2022_locs_males_juv %>%
     })) %>%
   # hr_to_sf(kde, band_numb, tracks)
   mutate(indData = map2(tracks, kde, function(x,y){
-
+    
       #Below we generate x random points within each NOBO's KDE home range.
       random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
       #Extracting covariates (lcov types) of known and random points
@@ -316,25 +282,13 @@ rsfData_summer2022_males_juv <- Summer_2022_locs_males_juv %>%
   #Unnesting data back into original rows.
   unnest(indData) 
 
-# rsfData_summer2022 %>% arrange(desc(case_))
 
 #Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
 rsfData_modified_summer2022_males_juv <- rsfData_summer2022_males_juv %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
 
-
-#Fitting glm
-pop.rsf_summer2022_males_juv <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
-                 data = rsfData_modified_summer2022_males_juv,
-                 na.action = "na.pass",
-                 family = "binomial")
- 
-#Viewing summary 
-summary(pop.rsf_summer2022_males_juv) 
-
-
-#### Looking at adult males only, glmer ####
+#Isolating Adult males
 Summer_2022_locs_males_adult <- Summer_2022_locs_all_age_sex %>%
   filter(sex == "M",
          age == "A")
@@ -379,38 +333,13 @@ rsfData_summer2022_males_adult <- Summer_2022_locs_males_adult %>%
   #Unnesting data back into original rows.
   unnest(indData) 
 
-# rsfData_summer2022 %>% arrange(desc(case_))
 
 #Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
 rsfData_modified_summer2022_males_adult <- rsfData_summer2022_males_adult %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
 
-
-#Fitting glm
-pop.rsf_summer2022_males_adult <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
-                 data = rsfData_modified_summer2022_males_adult,
-                 na.action = "na.pass",
-                 family = "binomial")
- 
-#Viewing summary 
-summary(pop.rsf_summer2022_males_adult) 
-```
-ALL MALES GLMER:
-Closer than expected: None (NP_BU nearly signficant)
-Further than expected: NP_UB, HW_UB
-
-JUV MALES GLMER:
-Closer than expected: NP_BU
-Further than expected: NP_UB, SS_BU
-
-ADULT MALES GLMER:
-Closer than expected: PP_UB, SS_BU
-Further than expected: HW_UB
-
-Now, let's isolate females using glmer()
-```{r}
-#### Looking at females only. glmer() ####
+#Isolating females
 Summer_2022_locs_females <- Summer_2022_locs_all_age_sex %>%
   filter(sex == "F")
 
@@ -454,24 +383,13 @@ rsfData_summer2022_females <- Summer_2022_locs_females %>%
   #Unnesting data back into original rows.
   unnest(indData) 
 
-# rsfData_summer2022 %>% arrange(desc(case_))
 
 #Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
 rsfData_modified_summer2022_females <- rsfData_summer2022_females %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
 
-
-#Fitting glm
-pop.rsf_summer2022_females <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
-                 data = rsfData_modified_summer2022_females,
-                 na.action = "na.pass",
-                 family = "binomial")
- 
-#Viewing summary 
-summary(pop.rsf_summer2022_females) 
-
-#### Looking at juv females only, glmer() ####
+#Isolating Juv females
 Summer_2022_locs_females_juv <- Summer_2022_locs_all_age_sex %>%
   filter(sex == "F",
          age == "J")
@@ -516,25 +434,12 @@ rsfData_summer2022_females_juv <- Summer_2022_locs_females_juv %>%
   #Unnesting data back into original rows.
   unnest(indData) 
 
-# rsfData_summer2022 %>% arrange(desc(case_))
-
 #Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
 rsfData_modified_summer2022_females_juv <- rsfData_summer2022_females_juv %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
 
-
-#Fitting glm
-pop.rsf_summer2022_females_juv <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
-                 data = rsfData_modified_summer2022_females_juv,
-                 na.action = "na.pass",
-                 family = "binomial")
- 
-#Viewing summary 
-summary(pop.rsf_summer2022_females_juv) 
-
-
-#### Looking at adult females only, glmer() ####
+#Isolating Adult Females
 Summer_2022_locs_females_adult <- Summer_2022_locs_all_age_sex %>%
   filter(sex == "F",
          age == "A")
@@ -579,15 +484,98 @@ rsfData_summer2022_females_adult <- Summer_2022_locs_females_adult %>%
   #Unnesting data back into original rows.
   unnest(indData) 
 
-# rsfData_summer2022 %>% arrange(desc(case_))
-
 #Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
 rsfData_modified_summer2022_females_adult <- rsfData_summer2022_females_adult %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
 
+```
+
+Looking at all birds as a mixed effects model.
+```{r}
 
 #Fitting glm
+pop.rsf_summer2022_all_birds <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
+                 data = rsfData_modified_summer2022,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(pop.rsf_summer2022_all_birds) 
+```
+ALL BIRDS SUMMER 2022 GLMER()
+Closer than expected: NP_BU, PP_UB, SS_UB
+Further than expected: SS_BU
+
+Let's try isolating males using glmer().
+```{r}
+#Fitting glm
+pop.rsf_summer2022_males <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
+                 data = rsfData_modified_summer2022_males,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(pop.rsf_summer2022_males) 
+
+
+pop.rsf_summer2022_males_juv <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
+                 data = rsfData_modified_summer2022_males_juv,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(pop.rsf_summer2022_males_juv) 
+
+#Fitting glm
+pop.rsf_summer2022_males_adult <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
+                 data = rsfData_modified_summer2022_males_adult,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(pop.rsf_summer2022_males_adult) 
+```
+ALL MALES GLMER:
+Closer than expected: None (NP_BU nearly signficant)
+Further than expected: NP_UB, HW_UB
+
+JUV MALES GLMER:
+Closer than expected: NP_BU
+Further than expected: NP_UB, SS_BU
+
+ADULT MALES GLMER:
+Closer than expected: PP_UB, SS_BU
+Further than expected: HW_UB
+
+Now, let's isolate females using glmer()
+```{r}
+#All females
+pop.rsf_summer2022_females <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
+                 data = rsfData_modified_summer2022_females,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(pop.rsf_summer2022_females) 
+
+#Juv females
+Summer_2022_locs_females_juv <- Summer_2022_locs_all_age_sex %>%
+  filter(sex == "F",
+         age == "J")
+
+
+#Juv females
+pop.rsf_summer2022_females_juv <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
+                 data = rsfData_modified_summer2022_females_juv,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(pop.rsf_summer2022_females_juv) 
+
+
+#Adult females
 pop.rsf_summer2022_females_adult <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
                  data = rsfData_modified_summer2022_females_adult,
                  na.action = "na.pass",
@@ -632,7 +620,7 @@ pop.rsf_summer2022_bayes <- brm(
   ),
 
   #Specifying 10000 iterations. A good balance of speed and accuracy.
-  iter = 4000,
+  iter = 10000,
 
   #4 MCMC chains seems to be a common choice for robust modeling.
   chains = 4,
@@ -692,7 +680,182 @@ mcmc_trace(pop.rsf_summer2022_bayes,
            n_warmup = 1000,
            facet_args = list(ncol = 2)) +
   xlab("Iteration") +
-  ylab("Parameter Estimate")
-
+  ylab("Parameter Estimate (all birds")
 
 ```
+
+Isolating males, Bayesian
+```{r}
+#### Isolating males, Bayesian ####
+pop.rsf_summer2022_bayes_males <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
+
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022_males,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 5)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 5)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 5)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes_males)
+
+# Get the summary of the model
+model_summary_summer2022_bayes_males <- summary(pop.rsf_summer2022_bayes_males)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes_males$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+# Filter out the intercept and plot
+coefficients_data_no_intercept %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('Beta coefficients for all males') +
+  theme_minimal()
+
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes, 
+           pars = c("b_Intercept", "b_AG", "b_UM", "b_WL", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW_UB", "b_HW_BU", "b_SS_UB", "b_SS_BU"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate (Males)")
+
+```
+
+Isolating females, bayesian
+```{r}
+#### Isolating males, Bayesian ####
+
+
+pop.rsf_summer2022_bayes_females <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
+
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022_females,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 5)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 5)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 5)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes_females)
+
+# Get the summary of the model
+model_summary_summer2022_bayes_females <- summary(pop.rsf_summer2022_bayes_females)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes_females$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+# Filter out the intercept and plot
+coefficients_data_no_intercept %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('Beta coefficients for all females') +
+  theme_minimal()
+
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes, 
+           pars = c("b_Intercept", "b_AG", "b_UM", "b_WL", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW_UB", "b_HW_BU", "b_SS_UB", "b_SS_BU"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate (females)")
+```
+
