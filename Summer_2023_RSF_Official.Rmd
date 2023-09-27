@@ -115,12 +115,14 @@ Importing Summer 2023 data.
 ```{r}
 #### Importing Summer 2023 locations #### 
 
-Summer_2023_locs <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2023/Summer2023Locs_Clean3.xlsx", setclass = "tibble") %>%
+#/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S23locsUnweighted.xlsx
+
+Summer_2023_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S23locsUnweighted.xlsx", setclass = "tibble") %>%
   clean_names() %>%
   filter(status == "A") %>%
   mutate(date = lubridate::as_date(date)) %>%
   filter(date >= "2023-04-18",
-         date <= "2023-09-30")
+         date <= "2023-07-01")
 
 
 #Importing "fate" spreadsheet, which has sex and age-class associated with each band number (unlike daily locations data)
@@ -134,6 +136,7 @@ Summer_2023_locs_all_age_sex <- Summer_2023_locs %>%
 #Taking a quick look.
 Summer_2023_locs_all_age_sex %>%
   view()
+
 
 ```
 
@@ -153,7 +156,7 @@ rsfData_summer2023 <- Summer_2023_locs_all_age_sex %>%
   nest(indData = !band_numb) %>% 
   #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
   mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
-  filter(n.locs > 30) %>%
+  filter(n.locs > 18) %>%
   #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
   mutate(tracks = purrr::map(indData, function(x){
   #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
@@ -184,7 +187,7 @@ rsfData_summer2023 <- Summer_2023_locs_all_age_sex %>%
 #write_csv(rsfData_summer2023, "/Users/jeffgrayum/Downloads/rsfData_summer202310x.csv")
 
 #Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
-rsfData_modified_summer2023 <- rsfData_summer2023 %>% 
+rsfData_modified_summer2023_late_sum <- rsfData_summer2023 %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
 
@@ -226,7 +229,7 @@ rsfData_summer2023_males <- Summer_2023_locs_males %>%
   mutate(indData = map2(tracks, kde, function(x,y){
 
       #Below we generate x random points within each NOBO's KDE home range.
-      random_points(y, n = nrow(x) * 5, level=.95, presence = x) %>%
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
       #Extracting covariates (lcov types) of known and random points
       extract_covariates(distanceStack)
   })) %>%
@@ -276,7 +279,7 @@ rsfData_summer2023_females <- Summer_2023_locs_females %>%
   mutate(indData = map2(tracks, kde, function(x,y){
 
       #Below we generate x random points within each NOBO's KDE home range.
-      random_points(y, n = nrow(x) * 5, level=.95, presence = x) %>%
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
       #Extracting covariates (lcov types) of known and random points
       extract_covariates(distanceStack)
   })) %>%
@@ -290,18 +293,128 @@ rsfData_modified_summer2023_females <- rsfData_summer2023_females %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
 ```
 
+Combining Summer 2022/23 data.
+```{r}
+rsf_modified_2022_23 <- rbind(
+  rsfData_modified_summer2022, rsfData_modified_summer2023
+)
+
+rsf_late <- rbind(rsfData_modified_summer2022_early_late, rsfData_modified_summer2023_late_sum)
+```
+
+
+
+
 Summer 2023 Bayesian RSF: Looking at all age and sex classes
 ```{r}
 #### Summer 2023  Bayesian: Looking at all age and sex classes. #### 
 
-pop.rsf_summer2023_bayes <- brm(
+pop.rsf_summer2023_bayes_TS <- brm(
   
   #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
-  case | trials(1) ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU + (1|band_numb),
+  case | trials(1) ~ AG + UM + NP_UB +NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU + (1|band_numb),
 
 
   #Specifying our dataset
   data = rsfData_modified_summer2023,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10,000 iterations. A good balance of speed and accuracy.
+  iter = 5000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2023_bayes_TS)
+
+# Get the summary of the model
+model_summary_summer2023_bayes_TS <- summary(pop.rsf_summer2023_bayes_TS)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2023_bayes_TS$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept_TS23 <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+coefficients_data_no_intercept_TS23$TS <- "YES"
+
+coeff23yesNoTS <- rbind(coefficients_data_no_intercept_TS23, coefficients_data_no_intercept_noTS23)
+
+coefficients_data_no_intercept_noTS23$year <- "2023"
+coefficients_data_no_intercept_NO_TS$year <- "2022"
+
+coeff22_23_NoTS <- rbind(coefficients_data_no_intercept_NO_TS, coefficients_data_no_intercept_noTS23)
+
+#both_years_10rand <- rbind(coefficients_data_no_intercept_2023, coefficients_2022_10rand)
+
+# Filter out the intercept and plot
+coeff23yesNoTS %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate, color = TS)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('Summer 2023 Beta coefficients with and without Telemetry stations') +
+  theme_minimal()
+
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2023_bayes, 
+           pars = c("b_Intercept", "b_AG", "b_UM", "b_WL", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW", "b_HP_BU", "b_HP_UB", "b_SS_UB", "b_SS_BU"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate (all birds")
+```
+
+Summer 2022 AND 2023 Bayesian RSF: Looking at all age and sex classes
+```{r}
+#### Summer 2022 AND 2023  Bayesian: Looking at all age and sex classes. #### 
+
+pop.rsf_summer2022_23_bayes <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + UM + NP_UB + NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU + (1|band_numb),
+
+
+  #Specifying our dataset
+  data = rsf_2022_23_noTS,
 
   #Specifying a binomial model. 
   family = "binomial",
@@ -324,15 +437,15 @@ pop.rsf_summer2023_bayes <- brm(
 )
 
 #Printing summary of results.
-summary(pop.rsf_summer2023_bayes)
+summary(pop.rsf_summer2022_23_bayes)
 
 # Get the summary of the model
-model_summary_summer2023_bayes <- summary(pop.rsf_summer2023_bayes)
+model_summary_summer2022_23_bayes <- summary(pop.rsf_summer2022_23_bayes)
 
 
 #Below we calculate our logs odds ratios.
 # Extract the fixed effects (estimates) from the model summary
-fixed_effects <- model_summary_summer2023_bayes$fixed
+fixed_effects <- model_summary_summer2022_23_bayes$fixed
 
 # Create a data frame from the fixed effects
 coefficients_data <- as.data.frame(fixed_effects)
@@ -354,35 +467,32 @@ coefficients_data$Variable <- rownames(coefficients_data)
 coefficients_data_no_intercept <- coefficients_data %>%
   filter(Variable != "Intercept")
 
-coefficients_data_no_intercept_2023 <- coefficients_data_no_intercept
+coefficients_data_no_intercept_2022_2023 <- coefficients_data_no_intercept
 
-coefficients_data_no_intercept_2023$Year <- "2023"
 
-cd22 <- read_xlsx("/Users/jeffgrayum/Downloads/2022_coefficients.xlsx")
-
-both_years <- rbind(coefficients_data_no_intercept_2023, cd22)
 
 # Filter out the intercept and plot
-both_years %>%
-  ggplot(aes(x= Variable, y = Estimate, color = Year)) +
+coefficients_data_no_intercept_2022_2023 %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
   geom_point() +  # Plot the beta coefficient point estimates
   geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
   coord_flip() +  # Flip the axis for better visibility
   xlab('Variable') +
   ylab('Beta Coefficient') +
-  ggtitle('Summer 2022 and 2023 Beta coefficients') +
+  ggtitle('Combined 2022/23 Beta coefficients: No Telem station data (10x random points)') +
   theme_minimal()
 
 
 # For the trace plots
 color_scheme_set("brightblue")
-mcmc_trace(pop.rsf_summer2023_bayes, 
-           pars = c("b_Intercept", "b_AG", "b_UM", "b_WL", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW", "b_HP_BU", "b_HP_UB", "b_SS_UB", "b_SS_BU"),
+mcmc_trace(pop.rsf_summer2022_23_bayes, 
+           pars = c("b_Intercept", "b_AG", "b_UM", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW", "b_HP_BU", "b_HP_UB", "b_SS_UB", "b_SS_BU"),
            n_warmup = 1000,
            facet_args = list(ncol = 2)) +
   xlab("Iteration") +
-  ylab("Parameter Estimate (all birds")
+  ylab("Parameter Estimate (all birds") +
+  ggtitle("Trace Plot 2022/23 (SD = 2)")
 ```
 
 Summer 2023: Males
@@ -554,6 +664,200 @@ coefficients_data_no_intercept %>%
 color_scheme_set("brightblue")
 mcmc_trace(pop.rsf_summer2023_bayes_females, 
            pars = c("b_Intercept", "b_AG", "b_UM", "b_WL", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW", "b_HP_BU", "b_HP_UB", "b_SS_UB", "b_SS_BU"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate (females)") +
+  ggtitle("Females Summer 2023: Trace Plot")
+```
+
+Creating RSF tibble for both 2022 and 2023
+```{r}
+#### Creating RSF tibble for summer 2022 and 2023 ####
+rsf_2022_23_noTS <- rbind(rsfData_modified_summer2022_noTS, rsfData_modified_summer2023_noTS)
+
+#Creating "early summer" rsf tibble.
+early_22_23 <- rbind(rsfData_modified_summer2022_early_sum, rsfData_modified_summer2023_early_sum)
+```
+
+
+Early summer, both years.
+```{r}
+#### Early summer, Bayesian ####
+
+
+pop.rsf_early_summer <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + UM + NP_UB +NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU + (1|band_numb),
+
+
+  #Specifying our dataset
+  data =early_22_23,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 5000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Printing summary of results.
+summary(pop.rsf_early_summer)
+
+# Get the summary of the model
+model_summary_22_23_early <- summary(pop.rsf_early_summer)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_22_23_early$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept_early <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+coefficients_data_no_intercept_early$period <- "early"
+
+# Filter out the intercept and plot
+coefficients_data_no_intercept_early %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('Summer 2023: Beta coefficients for all females') +
+  theme_minimal()
+
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2023_bayes_females, 
+           pars = c("b_Intercept", "b_AG", "b_UM", "b_WL", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW", "b_HP_BU", "b_HP_UB", "b_SS_UB", "b_SS_BU"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate (females)") +
+  ggtitle("Females Summer 2023: Trace Plot")
+```
+
+Late summer, both years.
+```{r}
+#### Early summer, Bayesian ####
+
+
+pop.rsf_late_summer <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + UM + NP_UB +NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU + (1|band_numb),
+
+
+  #Specifying our dataset
+  data =rsf_late,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 5000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Printing summary of results.
+summary(pop.rsf_late_summer)
+
+# Get the summary of the model
+model_summary_22_23_late <- summary(pop.rsf_late_summer)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_22_23_late$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept_late <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+coefficients_data_no_intercept_late$period <- "late"
+
+coeffEarlyLate <- rbind(coefficients_data_no_intercept_early, coefficients_data_no_intercept_late)
+
+# Filter out the intercept and plot
+coeffEarlyLate %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate, color = period)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('Summer 2022/23: Beta Coefficients for early and late summer', subtitle = 'July 9th considered midpoint') +
+  theme_minimal()
+
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_late_summer, 
+           pars = c("b_Intercept", "b_AG", "b_UM", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW", "b_HP_BU", "b_HP_UB", "b_SS_UB", "b_SS_BU"),
            n_warmup = 1000,
            facet_args = list(ncol = 2)) +
   xlab("Iteration") +
