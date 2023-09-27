@@ -39,10 +39,9 @@ Importing map of study site, setting template for raster stack.
 habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2022_LCov_BurnStatus/2022_LCOV_MGMT/2022_LCOV_BurnStatus_V2.shp")
 
 #Let's count the land cover types.
-habitat %>%
-  as.data.frame() %>%
-  count(LCOV_MGMT2, sort = T) %>%
-  print()
+#habitat %>%
+ # as.data.frame() %>%
+  #count(LCOV_MGMT2, sort = T)
 
 
 #Checking the extent of the bounding box.
@@ -115,10 +114,15 @@ Importing Summer 2022 data.
 ```{r}
 #### Importing summer locations #### 
 
-Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2022/All_Summer_2022_LOCS_CLEAN_NO_Nests.xlsx", setclass = "tibble") %>%
+#Data set with 1 loc per week, 1 per day.
+#"/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S22locsUnweightedv2.xlsx"
+
+Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S22locsUnweightedv2.xlsx", setclass = "tibble") %>%
   clean_names() %>%
-  filter(status != "D") %>%
-  mutate(date = lubridate::as_date(date))
+  filter(status != "D",
+         status != "N") %>%
+  mutate(date = lubridate::as_date(date)) %>% 
+  filter(date >= "2022-07-01")
 
 
 #Importing "fate" spreadsheet, which has sex and age-class associated with each band number (unlike daily locations data)
@@ -131,9 +135,8 @@ Summer_2022_locs_all_age_sex <- Summer_2022_locs %>%
   left_join(fate %>% select(band_numb, age, sex), by = "band_numb")
 
 #Taking a quick look.
-Summer_2022_locs_all_age_sex %>%
-  view()
-
+#Summer_2022_locs_all_age_sex %>%
+  #view()
 ```
 
 Creating tibbles for RSF, dividing by age and sex.
@@ -152,7 +155,7 @@ rsfData_summer2022 <- Summer_2022_locs_all_age_sex %>%
   nest(indData = !band_numb) %>% 
   #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
   mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
-  filter(n.locs > 30) %>%
+  filter(n.locs > 18) %>%
   #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
   mutate(tracks = purrr::map(indData, function(x){
   #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
@@ -182,9 +185,11 @@ rsfData_summer2022 <- Summer_2022_locs_all_age_sex %>%
 
 
 #Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
-rsfData_modified_summer2022 <- rsfData_summer2022 %>% 
+rsfData_modified_summer2022_early_late <- rsfData_summer2022 %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+
 
 
 #Isolating males
@@ -237,108 +242,6 @@ rsfData_modified_summer2022_males <- rsfData_summer2022_males %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
 
 
-#Isolating Juve Males
-Summer_2022_locs_males_juv <- Summer_2022_locs_all_age_sex %>%
-  filter(sex == "M",
-         age == "J")
-
-#Creating tibble for RSF, includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
-rsfData_summer2022_males_juv <- Summer_2022_locs_males_juv %>% 
-  #Converting it to a tibble
-  as_tibble() %>%
-   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
-  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
-         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
-         DT = DT.GMT-lubridate::hours(5)) %>% 
-  #Nesting by band number into new column called indData.
-  nest(indData = !band_numb) %>% 
-  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
-  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
-  filter(n.locs > 30) %>%
-  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
-  mutate(tracks = purrr::map(indData, function(x){
-  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
-    x %>%
-      make_track(.x = easting,
-                 .y = northing,
-                 .t = DT,
-                 crs = 26916)
-    })) %>%
-  mutate(kde = purrr::map(tracks, function(a){
-    # a <- rsfData_summer2022$tracks[[2]]
-    a %>%
-      hr_kde() %>%
-      hr_ud() %>%
-      hr_isopleths(levels = c(.5,.95))
-    })) %>%
-  # hr_to_sf(kde, band_numb, tracks)
-  mutate(indData = map2(tracks, kde, function(x,y){
-    
-      #Below we generate x random points within each NOBO's KDE home range.
-      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
-      #Extracting covariates (lcov types) of known and random points
-      extract_covariates(distanceStack)
-  })) %>%
-  #Unnesting data back into original rows.
-  unnest(indData) 
-
-
-#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
-rsfData_modified_summer2022_males_juv <- rsfData_summer2022_males_juv %>% 
-  mutate(case = ifelse(case_ == T, 1, 0)) %>%
-  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
-
-#Isolating Adult males
-Summer_2022_locs_males_adult <- Summer_2022_locs_all_age_sex %>%
-  filter(sex == "M",
-         age == "A")
-
-#Creating tibble for RSF, includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
-rsfData_summer2022_males_adult <- Summer_2022_locs_males_adult %>% 
-  #Converting it to a tibble
-  as_tibble() %>%
-   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
-  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
-         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
-         DT = DT.GMT-lubridate::hours(5)) %>% 
-  #Nesting by band number into new column called indData.
-  nest(indData = !band_numb) %>% 
-  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
-  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
-  filter(n.locs > 30) %>%
-  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
-  mutate(tracks = purrr::map(indData, function(x){
-  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
-    x %>%
-      make_track(.x = easting,
-                 .y = northing,
-                 .t = DT,
-                 crs = 26916)
-    })) %>%
-  mutate(kde = purrr::map(tracks, function(a){
-    # a <- rsfData_summer2022$tracks[[2]]
-    a %>%
-      hr_kde() %>%
-      hr_ud() %>%
-      hr_isopleths(levels = c(.5,.95))
-    })) %>%
-  # hr_to_sf(kde, band_numb, tracks)
-  mutate(indData = map2(tracks, kde, function(x,y){
-
-      #Below we generate x random points within each NOBO's KDE home range.
-      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
-      #Extracting covariates (lcov types) of known and random points
-      extract_covariates(distanceStack)
-  })) %>%
-  #Unnesting data back into original rows.
-  unnest(indData) 
-
-
-#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
-rsfData_modified_summer2022_males_adult <- rsfData_summer2022_males_adult %>% 
-  mutate(case = ifelse(case_ == T, 1, 0)) %>%
-  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
-
 #Isolating females
 Summer_2022_locs_females <- Summer_2022_locs_all_age_sex %>%
   filter(sex == "F")
@@ -389,113 +292,13 @@ rsfData_modified_summer2022_females <- rsfData_summer2022_females %>%
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
 
-#Isolating Juv females
-Summer_2022_locs_females_juv <- Summer_2022_locs_all_age_sex %>%
-  filter(sex == "F",
-         age == "J")
-
-#Creating tibble for RSF, includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
-rsfData_summer2022_females_juv <- Summer_2022_locs_females_juv %>% 
-  #Converting it to a tibble
-  as_tibble() %>%
-   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
-  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
-         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
-         DT = DT.GMT-lubridate::hours(5)) %>% 
-  #Nesting by band number into new column called indData.
-  nest(indData = !band_numb) %>% 
-  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
-  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
-  filter(n.locs > 30) %>%
-  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
-  mutate(tracks = purrr::map(indData, function(x){
-  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
-    x %>%
-      make_track(.x = easting,
-                 .y = northing,
-                 .t = DT,
-                 crs = 26916)
-    })) %>%
-  mutate(kde = purrr::map(tracks, function(a){
-    # a <- rsfData_summer2022$tracks[[2]]
-    a %>%
-      hr_kde() %>%
-      hr_ud() %>%
-      hr_isopleths(levels = c(.5,.95))
-    })) %>%
-  # hr_to_sf(kde, band_numb, tracks)
-  mutate(indData = map2(tracks, kde, function(x,y){
-
-      #Below we generate x random points within each NOBO's KDE home range.
-      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
-      #Extracting covariates (lcov types) of known and random points
-      extract_covariates(distanceStack)
-  })) %>%
-  #Unnesting data back into original rows.
-  unnest(indData) 
-
-#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
-rsfData_modified_summer2022_females_juv <- rsfData_summer2022_females_juv %>% 
-  mutate(case = ifelse(case_ == T, 1, 0)) %>%
-  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
-
-#Isolating Adult Females
-Summer_2022_locs_females_adult <- Summer_2022_locs_all_age_sex %>%
-  filter(sex == "F",
-         age == "A")
-
-#Creating tibble for RSF, includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
-rsfData_summer2022_females_adult <- Summer_2022_locs_females_adult %>% 
-  #Converting it to a tibble
-  as_tibble() %>%
-   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
-  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
-         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
-         DT = DT.GMT-lubridate::hours(5)) %>% 
-  #Nesting by band number into new column called indData.
-  nest(indData = !band_numb) %>% 
-  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
-  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
-  filter(n.locs > 30) %>%
-  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
-  mutate(tracks = purrr::map(indData, function(x){
-  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
-    x %>%
-      make_track(.x = easting,
-                 .y = northing,
-                 .t = DT,
-                 crs = 26916)
-    })) %>%
-  mutate(kde = purrr::map(tracks, function(a){
-    # a <- rsfData_summer2022$tracks[[2]]
-    a %>%
-      hr_kde() %>%
-      hr_ud() %>%
-      hr_isopleths(levels = c(.5,.95))
-    })) %>%
-  # hr_to_sf(kde, band_numb, tracks)
-  mutate(indData = map2(tracks, kde, function(x,y){
-
-      #Below we generate x random points within each NOBO's KDE home range.
-      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
-      #Extracting covariates (lcov types) of known and random points
-      extract_covariates(distanceStack)
-  })) %>%
-  #Unnesting data back into original rows.
-  unnest(indData) 
-
-#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
-rsfData_modified_summer2022_females_adult <- rsfData_summer2022_females_adult %>% 
-  mutate(case = ifelse(case_ == T, 1, 0)) %>%
-  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
-
 ```
 
 Looking at all birds as a mixed effects model.
 ```{r}
 
 #Fitting glm
-pop.rsf_summer2022_all_birds <- glmer(case ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
+pop.rsf_summer2022_all_birds <- glmer(case ~ AG + UM + NP_UB +NP_BU + PP_UB + WL + PP_BU + HW_UB + HW_BU + SS_UB + SS_BU + (1|band_numb),
                  data = rsfData_modified_summer2022,
                  na.action = "na.pass",
                  family = "binomial")
@@ -599,10 +402,10 @@ Further than expected: None
 ```{r}
 ##### Summer 2022  Bayesian: Looking at all age and sex classes. #### 
 
-pop.rsf_summer2022_bayes <- brm(
+pop.rsf_summer2022_bayes_TS <- brm(
   
   #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
-  case | trials(1) ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU + (1|band_numb),
+  case | trials(1) ~ AG + UM + NP_UB +NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU + WL + (1|band_numb),
 
 
   #Specifying our dataset
@@ -619,7 +422,7 @@ pop.rsf_summer2022_bayes <- brm(
   ),
 
   #Specifying 10000 iterations. A good balance of speed and accuracy.
-  iter = 10000,
+  iter = 5000,
 
   #4 MCMC chains seems to be a common choice for robust modeling.
   chains = 4,
@@ -629,18 +432,18 @@ pop.rsf_summer2022_bayes <- brm(
 )
 
 #Printing summary of results.
-summary(pop.rsf_summer2022_bayes)
+summary(pop.rsf_summer2022_bayes_TS)
 
 # Get the summary of the model
-model_summary_summer2022_bayes <- summary(pop.rsf_summer2022_bayes)
+model_summary_summer2022_bayes_TS <- summary(pop.rsf_summer2022_bayes_TS)
 
 
 #Below we calculate our logs odds ratios.
 # Extract the fixed effects (estimates) from the model summary
-fixed_effects <- model_summary_summer2022_bayes$fixed
+fixed_effects_TS <- model_summary_summer2022_bayes_TS$fixed
 
 # Create a data frame from the fixed effects
-coefficients_data <- as.data.frame(fixed_effects)
+coefficients_data <- as.data.frame(fixed_effects_TS)
 
 # Adding a column for the odds ratios by exponentiating the estimates
 coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
@@ -656,26 +459,36 @@ print(coefficients_data)
 # Add a new column to store the row names... seems to be the only way to filter out the intercept.
 coefficients_data$Variable <- rownames(coefficients_data)
 
-coefficients_data_no_intercept <- coefficients_data %>%
+coefficients_data_no_intercept_TS <- coefficients_data %>%
   filter(Variable != "Intercept")
 
+coefficients_data_no_intercept_TS$TS <- "YES"
+
+#coefficients_data_no_intercept_NO_TS <- coefficients_data %>%
+  #filter(Variable != "Intercept")
+
+coCombined <- rbind(coefficients_data_no_intercept_NO_TS, coefficients_data_no_intercept_TS)
+
 # Filter out the intercept and plot
-coefficients_data_no_intercept %>%
-  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
+coCombined %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate, color = TS)) +
   geom_point() +  # Plot the beta coefficient point estimates
   geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
   coord_flip() +  # Flip the axis for better visibility
   xlab('Variable') +
   ylab('Beta Coefficient') +
-  ggtitle('2022: Beta coefficients for all age and sex classes') +
+  ggtitle('2022: Beta coefficients: Including and Excluding data from Telem staions') +
   theme_minimal()
 
+coefficients_2022_10rand <- coefficients_data_no_intercept
+
+writexl::write_xlsx(coefficients_5_rand_points_2022, "/Users/jeffgrayum/Downloads/2022_coefficients.xlsx")
 
 # For the trace plots
 color_scheme_set("brightblue")
 mcmc_trace(pop.rsf_summer2022_bayes, 
-           pars = c("b_Intercept", "b_AG", "b_UM", "b_WL", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW", "b_HP_BU", "b_HP_UB", "b_SS_UB", "b_SS_BU"),
+           pars = c("b_Intercept", "b_AG", "b_UM", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW", "b_HP_BU", "b_HP_UB", "b_SS_UB", "b_SS_BU"),
            n_warmup = 1000,
            facet_args = list(ncol = 2)) +
   xlab("Iteration") +
