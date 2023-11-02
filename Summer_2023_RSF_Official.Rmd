@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 #### Libraries #### 
+library(tidyverse)
 library(raster)
 library(amt)
 library(dplyr)
@@ -129,8 +130,9 @@ lapply(rasterList, extent)
 #Now we stack our raster layers.
 distanceStack23 <- stack(rasterList)
 
-#Plotting our seven distance-based raster layers.
 plot(distanceStack23)
+
+
 ```
 
 Importing Summer 2023 data. 
@@ -152,7 +154,32 @@ fate <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Fate/fate_all_birds
 
 #Adding sex to each real/random location.
 Summer_2023_loc <- Summer_2023_locs %>%
-  left_join(fate %>% select(band_numb, sex), by = "band_numb")
+  left_join(fate %>% 
+  dplyr::select(band_numb, sex), by = "band_numb")
+```
+
+```{r}
+
+#### Creating image of our distance based raster stack ####
+# Defining break values, so we have more resolution at a shorter distance.
+break_values <- c(0, 1, 50, 100, 250, 500, 1000, 2000, 5000)
+colors <- c("red", "orange", "yellow", "green", "blue", "purple", "white", "white")
+
+# Specifying num of rows and columns in plot.
+num_rows <- 3
+num_cols <- 4
+
+# Messing with plot layout so it works
+par(mfrow = c(num_rows, num_cols), mar=c(1,1,1,1))
+
+# Plotting
+for(i in 1:nlayers(distanceStack23)){
+  plot(distanceStack23[[i]], breaks = break_values, col = colors, main = names(distanceStack23)[i], legend = FALSE, axes=FALSE, box=FALSE)
+}
+
+# Reseting graphical parameters to default
+par(mfrow=c(1,1), mar=c(5,4,4,2)+0.1)
+
 
 ```
 
@@ -200,7 +227,6 @@ rsfData_summer2023 <- Summer_2023_locs %>%
   #Unnesting data back into original rows.
   unnest(indData) 
 
-
 rsfData_modified_summer2023 <- rsfData_summer2023 %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
@@ -210,6 +236,7 @@ rsfData_modified_summer2023 <- rsfData_summer2023 %>%
 Combining Summer 2022/23 data.
 ```{r}
 #### Combining summer 2022/23 data ####
+
 rsf_modified_2022_23 <- rbind(
   rsfData_modified_summer2022, rsfData_modified_summer2023
 )
@@ -290,10 +317,10 @@ coefficients_data_no_intercept_23 <- coefficients_data %>%
 # Filter out the intercept and plot
 coefficients_data_no_intercept_23 %>%
   ggplot(aes(x = reorder(variable, -estimate), y = estimate)) +
-  geom_point() +  # Plot the beta coefficient point estimates
+  geom_point() +  
   geom_errorbar(aes(ymin = l_95_percent_ci, ymax = u_95_percent_ci), width = 0.2) + 
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
-  coord_flip() +  # Flip the axis for better visibility
+  coord_flip() +  
   xlab('Variable') +
   ylab('Beta Coefficient') +
   ggtitle('Summer 2023 Beta Coefficients') +
@@ -350,11 +377,10 @@ Summer 2022 AND 2023 Bayesian RSF: Looking at all age and sex classes
 ```{r}
 #### Summer 2022 AND 2023; HP and PP burned #### Cannot include HP_BU and HP_UB in the same model (correlation). Same with PP_BU and PP_UB
 
-
-pop.rsf_summer2022_23_bayes_bu <- brm(
+pop.rsf_summer2022_23_bayes <- brm(
   
   #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
-  case | trials(1) ~ AG + UM + NP_UB + NP_BU + PP_BU + HW + HP_BU + SS_UB + SS_BU + (1|band_numb),
+  case | trials(1) ~ AG + UM + NP_UB + NP_BU + NP_UB + PP_BU + HW + HP_BU + HP_UB + SS_UB + SS_BU + (1|band_numb),
 
 
   #Specifying our dataset
@@ -367,33 +393,32 @@ pop.rsf_summer2022_23_bayes_bu <- brm(
   #prior = c(
     #set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
     #set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
-    #set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
-  #),
+    #set_prior("normal(0, 2)", class = "sd"),         # Prior for the standard deviation (random effect...band_numb),
 
   #Specifying 10000 iterations. A good balance of speed and accuracy.
-  iter = 4000,
+  iter = 10000,
 
   #4 MCMC chains seems to be a common choice for robust modeling.
   chains = 4,
   
   seed = 123,
   
-  warmup = 2000,
+  warmup = 5000,
   
    #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
   control = list(adapt_delta = 0.9)
 )
 
 #Printing summary of results.
-summary(pop.rsf_summer2022_23_bayes_bu)
+summary(pop.rsf_summer2022_23_bayes)
 
 # Get the summary of the model
-model_summary_summer2022_23_bayes_bu <- summary(pop.rsf_summer2022_23_bayes_bu)
+model_summary_summer2022_23_bayes <- summary(pop.rsf_summer2022_23_bayes)
 
 
 #Below we calculate our logs odds ratios.
 # Extract the fixed effects (estimates) from the model summary
-fixed_effects <- model_summary_summer2022_23_bayes_bu$fixed
+fixed_effects <- model_summary_summer2022_23_bayes$fixed
 
 # Create a data frame from the fixed effects
 coefficients_data <- as.data.frame(fixed_effects)
@@ -415,30 +440,45 @@ coefficients_data_no_intercept <- coefficients_data %>%
 coefficients_data_no_intercept_2022_2023 <- coefficients_data_no_intercept %>%
   clean_names()
 
+#writexl::write_xlsx(coefficients_data_no_intercept_2022_2023, "/Volumes/Samsung_T5/ThesisPlots/Ch1/betasLCOV22_23.xlsx")
 
 #plotting beta coefficients and confidence levels
 coefficients_data_no_intercept_2022_2023 %>%
   ggplot(aes(x = reorder(variable, -estimate), y = estimate)) +
   geom_point() + 
   geom_errorbar(aes(ymin = l_95_percent_ci, ymax = u_95_percent_ci), width = 0.2) + 
-  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.5) +  
   coord_flip() +  
-  labs(x = "Land cover",
-       y = "Beta Coefficient",
-       title = "Beta coefficients: Combined Summer 2022/23 locations (HP and PP Burned)",
-       subtitle = "Shown with 95% credible intervals") +
-  theme_minimal()
+  labs(x = "Land Cover",
+       y = "Beta Coefficient") +
+  scale_y_continuous(limits = c(-0.2, 0.2)) +
+  theme_bw()
+
+coefficients_data_no_intercept_2022_2023 %>%
+  ggplot(aes(x = reorder(variable, -estimate), y = odds_ratio)) +
+  geom_point() +
+  coord_flip() +  
+  labs(x = "Land Cover",
+       y = "Odds Ratio") +
+  theme_bw()
+  
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.5) +  
+  coord_flip() +  
+  labs(x = "Land Cover",
+       y = "Beta Coefficient") +
+  scale_y_continuous(limits = c(-0.2, 0.2)) +
+  theme_bw()
+
 
 
 # For the trace plots
-color_scheme_set("brightblue")
 mcmc_trace(pop.rsf_summer2022_23_bayes_bu, 
            pars = c("b_Intercept", "b_AG", "b_UM", "b_NP_UB", "b_NP_BU", "b_PP_BU", "b_HW", "b_HP_BU", "b_SS_UB", "b_SS_BU"),
            n_warmup = 5000,
            facet_args = list(ncol = 2)) +
   xlab("Iteration") +
-  ylab("Parameter Estimate (all birds") +
-  ggtitle("Trace Plot 2022/23 (SD = 2)")
+  ylab("Parameter Estimate") +
+  theme_bw()
 
 # Get the posterior samples as a data frame (posterior package deprecated)...
 posterior_draws_bu <- as_draws_df(pop.rsf_summer2022_23_bayes_bu)
@@ -447,9 +487,10 @@ posterior_draws_bu <- as_draws_df(pop.rsf_summer2022_23_bayes_bu)
 #Selecting columns we want to plot, renaming
 posterior_draws_bu <- posterior_draws_bu %>%
   as_tibble() %>%
-  select(starts_with("b_"), -b_Intercept) %>%
+  dplyr::select(starts_with("b_"), -b_Intercept) %>%
   rename(AG = b_AG,
          HP_BU = b_HP_BU,
+         HP_UB = b_HP_UB,
          HW = b_HW,
          NP_BU = b_NP_BU,
          NP_UB = b_NP_UB,
@@ -466,231 +507,20 @@ posterior_draws_long_bu <- posterior_draws_bu %>%
 posterior_draws_long_bu %>%
   ggplot(aes(x = value, fill = landcover)) +
   geom_density(alpha = 0.7, position = "jitter") +
-  facet_wrap(~factor(landcover, levels = c("NP_BU", "SS_UB", "AG", "PP_BU", "SS_BU", "UM", "HW", "NP_UB", "HP_BU"))) +
+  facet_wrap(~factor(landcover, levels = c("NP_BU", "AG","HP_UB", "SS_UB","PP_BU", "SS_BU", "HW", "UM", "NP_UB", "HP_BU")), ncol = 5) +
   theme_minimal() +
   labs(x = "Posterior Distribution of Beta Coefficients",
-      y = "Density", 
-      title = "Posterior distributions of breeding season beta coefficients (HP and PP burned)",
-      subtitle = "2022 and 2023 data") +
+      y = "Density") +
   geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
-  theme(legend.position = "none")
-```
-
-```{r}
-#### 2022 AND 2023 data; HP and PP unburned ####
-pop.rsf_summer2022_23_bayes_ub <- brm(
-  
-  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
-  case | trials(1) ~ AG + UM + NP_UB + NP_BU + PP_UB + HW + HP_UB + SS_UB + SS_BU + (1|band_numb),
-
-
-  #Specifying our dataset
-  data = rsf_modified_2022_23,
-
-  #Specifying a binomial model. 
-  family = "binomial",
-
-  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
-  prior = c(
-    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
-    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effect
-    set_prior("normal(0, 2)", class = "sd")         # Prior for the random effect)
-  ),
-
-  #Specifying 10000 iterations. A good balance of speed and accuracy.
-  iter = 4000,
-
-  #4 MCMC chains seems to be a common choice for robust modeling.
-  chains = 4,
-  
-  seed = 123,
-  
-  warmup = 2000,
-  
-   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
-  control = list(adapt_delta = 0.9)
-)
-
-#Printing summary of results.
-summary(pop.rsf_summer2022_23_bayes_ub)
-
-# Get the summary of the model
-model_summary_summer2022_23_bayes_ub <- summary(pop.rsf_summer2022_23_bayes_ub)
-
-
-#Below we calculate our logs odds ratios.
-# Extract the fixed effects (estimates) from the model summary
-fixed_effects <- model_summary_summer2022_23_bayes_ub$fixed
-
-# Create a data frame from the fixed effects
-coefficients_data <- as.data.frame(fixed_effects)
-
-# Adding a column for the odds ratios by exponentiating the estimates
-coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
-
-
-# Displaying results
-print(coefficients_data)
-
-#Plotting coefficients and confidence intervals
-# Add a new column to store the row names... seems to be the only way to filter out the intercept.
-coefficients_data$Variable <- rownames(coefficients_data)
-
-coefficients_data_no_intercept <- coefficients_data %>%
-  filter(Variable != "Intercept")
-
-coefficients_data_no_intercept_2022_2023 <- coefficients_data_no_intercept %>%
-  clean_names()
-
-
-#plotting beta coefficients and confidence levels
-coefficients_data_no_intercept_2022_2023 %>%
-  ggplot(aes(x = reorder(variable, -estimate), y = estimate)) +
-  geom_point() + 
-  geom_errorbar(aes(ymin = l_95_percent_ci, ymax = u_95_percent_ci), width = 0.2) + 
-  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
-  coord_flip() +  
-  labs(x = "Land cover",
-       y = "Beta Coefficient",
-       title = "Beta coefficients: Combined Summer 2022/23 locations (HP and PP unburned)",
-       subtitle = "Shown with 95% credible intervals") +
-  theme_minimal()
-
-
-# For the trace plots
-color_scheme_set("brightblue")
-mcmc_trace(pop.rsf_summer2022_23_bayes_ub, 
-           pars = c("b_Intercept", "b_AG", "b_UM", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_HW", "b_HP_UB", "b_SS_UB", "b_SS_BU"),
-           n_warmup = 5000,
-           facet_args = list(ncol = 2)) +
-  xlab("Iteration") +
-  ylab("Parameter Estimate (all birds") +
-  ggtitle("Trace Plot 2022/23 (SD = 2)")
-
-# Get the posterior samples as a data frame (posterior package deprecated)...
-posterior_draws_ub <- as_draws_df(pop.rsf_summer2022_23_bayes_ub)
-
-
-#Selecting columns we want to plot, renaming
-posterior_draws_ub <- posterior_draws_ub %>%
-  as_tibble() %>%
-  select(starts_with("b_"), -b_Intercept) %>%
-  rename(AG = b_AG,
-         HP_UB = b_HP_UB,
-         HW = b_HW,
-         NP_BU = b_NP_BU,
-         NP_UB = b_NP_UB,
-         PP_UB = b_PP_UB,
-         SS_BU = b_SS_BU,
-         SS_UB = b_SS_UB,
-         UM = b_UM)
-
-# Pivoting long, so we can facet wrap by land cover type
-posterior_draws_long_ub <- posterior_draws_ub %>%
-  pivot_longer(cols = AG:SS_BU, names_to = "landcover", values_to = "value")
-
-# plotting density of posterior draws
-posterior_draws_long_ub %>%
-  ggplot(aes(x = value, fill = landcover)) +
-  geom_density(alpha = 0.7, position = "jitter") +
-  facet_wrap(~factor(landcover, levels = c("NP_BU", "AG", "SS_UB", "PP_UB", "HP_UB", "SS_BU", "UM", "NP_UB", "HW"))) +
-  theme_minimal() +
-  labs(x = "Posterior Distribution of Beta Coefficients",
-      y = "Density", 
-      title = "Posterior distributions of breeding season beta coefficients (HP and PP unburned)",
-      subtitle = "2022 and 2023 data") +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
-  theme(legend.position = "none")
-
-
-```
-
-
-```{r}
-#### Averaging both models 2022/23 Handling correlations between HP_UB/BU and PP_UB/BU####
-#This has PP and HP as burned
-pop.rsf_summer2022_23_bayes_bu <- brm(
-  
-  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
-  case | trials(1) ~ AG + UM + NP_UB + NP_BU + PP_BU + HW + HP_BU + SS_UB + SS_BU + (1|band_numb),
-
-
-  #Specifying our dataset
-  data = rsf_modified_2022_23,
-
-  #Specifying a binomial model. 
-  family = "binomial",
-
-  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
-  #prior = c(
-    #set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
-    #set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
-    #set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
-  #),
-
-  #Specifying 10000 iterations. A good balance of speed and accuracy.
-  iter = 4000,
-
-  #4 MCMC chains seems to be a common choice for robust modeling.
-  chains = 4,
-  
-  seed = 123,
-  
-  warmup = 2000,
-  
-   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
-  control = list(adapt_delta = 0.9)
-)
-
-#This model has HP and PP as UB
-pop.rsf_summer2022_23_bayes_ub <- brm(
-  
-  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
-  case | trials(1) ~ AG + UM + NP_UB + NP_BU + PP_UB + HW + HP_UB + SS_UB + SS_BU + (1|band_numb),
-
-
-  #Specifying our dataset
-  data = rsf_modified_2022_23,
-
-  #Specifying a binomial model. 
-  family = "binomial",
-
-  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
-  prior = c(
-    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
-    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effect
-    set_prior("normal(0, 2)", class = "sd")         # Prior for the random effect)
-  ),
-
-  #Specifying 10000 iterations. A good balance of speed and accuracy.
-  iter = 4000,
-
-  #4 MCMC chains seems to be a common choice for robust modeling.
-  chains = 4,
-  
-  seed = 123,
-  
-  warmup = 2000,
-  
-   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
-  control = list(adapt_delta = 0.9)
-)
-
-mcmc_areas(posterior_draws_ub, pars = c("b_AG",
-         "b_HP_UB",
-         "b_HW",
-         "b_NP_BU",
-         "b_NP_UB",
-         "b_PP_UB",
-         "b_SS_BU",
-         "b_SS_UB",
-         "b_UM"), 
-         prob = 0.95)
-
-
-
-```
+   theme_bw() +
+  theme(legend.position = "none") 
  
+```
+
+
+
+
+
 ```{r}
 #### 2022/23 males ####
 pop.rsf_summer2022_23_males <- brm(
@@ -1113,7 +943,7 @@ coefficients_data_no_intercept %>%
   coord_flip() +  # Flip the axis for better visibility
   xlab('Variable') +
   ylab('Beta Coefficient') +
-  ggtitle('Beta coefficients: burned and unburned areas') +
+  ggtitle('Beta coefficients: burned and unburned areas: 2023') +
   theme_minimal()
 
 
@@ -1152,11 +982,11 @@ rsf22_23_bayes_burned_unburned <- brm(
   family = "binomial",
 
   #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
-  prior = c(
-    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
-    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
-    set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
-  ),
+  #prior = c(
+    #set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    #set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    #set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  #),
 
   #Specifying 10000 iterations. A good balance of speed and accuracy.
   iter = 10000,
@@ -1204,25 +1034,23 @@ coefficients_data_no_intercept <- coefficients_data %>%
 # Filter out the intercept and plot
 coefficients_data_no_intercept %>%
   ggplot(aes(x = reorder(variable, -estimate), y = estimate)) +
-  geom_point() +  # Plot the beta coefficient point estimates
+  geom_point() + 
   geom_errorbar(aes(ymin = l_95_percent_ci, ymax = u_95_percent_ci), width = 0.2) + 
-  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
-  coord_flip() +  # Flip the axis for better visibility
-  labs(x = "Beta cofficient",
-       y = "Variable",
-       title = "Beta coefficients of burned, unburned, and never burned land cover",
-       subtitle = "2022/23 breeding season locations") +
-  theme_minimal()
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.5) +  
+  coord_flip() +  
+  labs(x = "Burn Status",
+       y = "Beta Coefficient") +
+  theme_bw()
 
 
 # For the trace plots
 color_scheme_set("brightblue")
 mcmc_trace(rsf22_23_bayes_burned_unburned, 
            pars = c("b_Intercept", "b_ub", "b_bu", "b_n_b"),
-           n_warmup = 1000,
+           n_warmup = 5000,
            facet_args = list(ncol = 2)) +
   xlab("Iteration") +
-  ylab("Parameter Estimate (Burned vs Unburned)")
+  ylab("Parameter Estimate")
 
 # Get the posterior samples as a data frame (posterior package deprecated)...
 posterior_draws_bu <- as_draws_df(rsf22_23_bayes_burned_unburned)
@@ -1231,7 +1059,7 @@ posterior_draws_bu <- as_draws_df(rsf22_23_bayes_burned_unburned)
 #Selecting columns we want to plot, renaming
 posterior_draws <- posterior_draws_bu %>%
   as_tibble() %>%
-  select(starts_with("b_"), -b_Intercept) %>%
+  dplyr::select(starts_with("b_"), -b_Intercept) %>%
   rename(BU = b_bu,
          UB = b_ub,
          NB = b_n_b)
@@ -1248,9 +1076,10 @@ posterior_draws_long %>%
   theme_minimal() +
   xlab("Posterior Distribution of Beta Coefficients") +
   ylab("Density") +
-  ggtitle("Posterior Distributions of Summer 2023 Beta Coefficients") +
   geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
-  theme(legend.position = "none")
+  theme_bw() +
+  theme(legend.position = "none") 
+
 
 ```
 
@@ -1271,10 +1100,9 @@ pred_model <-  brm(
   family = "binomial",
 
   #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
-  prior = c(
-    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
-    set_prior("normal(0, 2)", class = "b")),         # Prior for the fixed effects (land cover types)
-    #set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+ #prior = c(
+    #set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    ##set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
   #),
 
   #Specifying 10,000 iterations. A good balance of speed and accuracy.
@@ -1310,69 +1138,67 @@ np_bu_df <- data.frame(
   UM = rep(mean(rsf_modified_2022_23$UM), length(np_bu_values))
   )
 
- View(np_bu_df)
- 
- pred_npbu <- as.data.frame(posterior_predict(pred_model, newdata = np_bu_df, type = "response", se.fit = TRUE))
- 
- 
- pred_npbu <- pred_npbu %>%
-   clean_names()
- 
- pred_npbu$np_bu_values <- np_bu_values
- 
-pred_npbu$lowCI = (pred_npbu$estimate - (1.96 * pred_npbu$est_error))
-pred_npbu$upperCI = (pred_npbu$estimate + (1.96 * pred_npbu$est_error))
 
-pred_npbu %>%
-  ggplot(aes(np_bu_values, estimate)) +
+np_bu_pred_draws <- epred_draws(newdata = np_bu_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000)
+
+np_bu_pred_draws_sum <- np_bu_pred_draws%>%
+  group_by(NP_BU) %>%
+  summarize(mean_fit = mean(.prediction),
+            sd_fit = sd(.prediction))
+
+np_bu_pred_draws_sum <- np_bu_pred_draws %>%
+  group_by(NP_BU) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+
+np_bu_pred_draws_sum%>% 
+  ggplot(aes(NP_BU, mean_fit)) +
   geom_line() +
-  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "blue", alpha = 0.1) +
-  labs(x = "Distance from Natural Pine Burned (centered and scaled)",
-       y = "Predicted probability of use",
-       title = "Predicted probability of use of NP_BU") +
-  scale_y_continuous(labels = percent)
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5)
 
 
-#Now let's try HP_BU
-hp_bu_values <- seq(min(rsf_modified_2022_23$HP_BU, na.rm = TRUE), 
-                 max(rsf_modified_2022_23$HP_BU, na.rm = TRUE), 
+#AG TIME
+#Let's start with NP_BU
+ag_bu_values <- seq(min(rsf_modified_2022_23$AG, na.rm = TRUE), 
+                 max(rsf_modified_2022_23$AG, na.rm = TRUE), 
                  length.out = 1000)
 
-hp_bu_df <- data.frame(
-  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(hp_bu_values)),
-  AG = rep(mean(rsf_modified_2022_23$AG), length(hp_bu_values)),
-  HP_BU = hp_bu_values,
-  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(hp_bu_values)),
-  HW = rep(mean(rsf_modified_2022_23$HW), length(hp_bu_values)),
-  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(hp_bu_values)),
-  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(hp_bu_values)),
-  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(hp_bu_values)),
-  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(hp_bu_values)),
-  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(hp_bu_values)),
-  UM = rep(mean(rsf_modified_2022_23$UM), length(hp_bu_values))
+ag_bu_df <- data.frame(
+  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(np_bu_values)),
+  AG = ag_bu_values,
+  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(np_bu_values)),
+  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(np_bu_values)),
+  HW = rep(mean(rsf_modified_2022_23$HW), length(np_bu_values)),
+  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(np_bu_values)),
+  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(np_bu_values)),
+  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(np_bu_values)),
+  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(np_bu_values)),
+  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(np_bu_values)),
+  UM = rep(mean(rsf_modified_2022_23$UM), length(np_bu_values))
   )
 
- View(hp_bu_df)
- 
- pred_hpbu <- as.data.frame(predict(pred_model, newdata = hp_bu_df, type = "response", se.fit = TRUE))
- 
- 
- pred_hpbu <- pred_hpbu %>%
-   clean_names()
- 
- pred_hpbu$hp_bu_values <- hp_bu_values
- 
-pred_hpbu$lowCI = (pred_hpbu$estimate - (1.96 *pred_hpbu$est_error))
-pred_hpbu$upperCI = (pred_hpbu$estimate + (1.96 *pred_hpbu$est_error))
 
-pred_hpbu %>%
-  ggplot(aes(hp_bu_values, estimate)) +
+ag_bu_pred_draws <- epred_draws(newdata = ag_bu_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000)
+
+ag_bu_pred_draws_sum <- ag_bu_pred_draws%>%
+  group_by(AG) %>%
+  summarize(mean_fit = mean(.prediction),
+            sd_fit = sd(.prediction))
+
+ag_bu_pred_draws_sum <- ag_bu_pred_draws %>%
+  group_by(AG) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+
+ag_bu_pred_draws_sum%>% 
+  ggplot(aes(AG, mean_fit)) +
   geom_line() +
-  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "blue", alpha = 0.1) +
-  labs(x = "Distance from Hardwood Pine Burned (centered and scaled)",
-       y = "Predicted probability of use",
-       title = "Predicted probability of use of HP_BU") +
-  scale_y_continuous(labels = percent)
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5)
+
 
 
 ```
@@ -1386,7 +1212,7 @@ samp_list_23 <- Summer_2023_locs %>%
   group_by(band_numb) %>%
   summarize(n = n()) %>%
   arrange(n) %>%
-  filter(n > 30) %>%
+  filter(n > 25) %>%
   dplyr::select(band_numb) %>%
   pull(band_numb)
 
@@ -1458,9 +1284,12 @@ min(kde_95_sum23$hr_size)
 
 max(kde_95_sum23$hr_size)
 
+wilcox.test(kde_95_sum22$hr_size, kde_95_sum23$hr_size,paired = FALSE)
+
 kde_95_sum23 %>%
   ggplot(aes(hr_size)) +
   geom_histogram(bins = 10)
+
 
 
 #Looking at data from both years
@@ -1489,7 +1318,7 @@ all_hr_95 %>%
        subtitle = "Summer 2022 and Summer 2023")
 
 all_hr_95 %>%
-  ggplot(aes(hr_size, group = year, fill = Year)) +
+  ggplot(aes(hr_size, group = Year, fill = Year)) +
   geom_histogram(bins = 15, alpha = 0.8) +
   labs(x = "HR Size (95% UD)",
        y = "Count",
@@ -1503,4 +1332,7 @@ all_hr_95 %>%
        title = "Distribution of HR sizes (ha)")
 
 ```
+
+
+
 
