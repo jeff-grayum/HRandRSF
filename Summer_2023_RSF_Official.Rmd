@@ -1153,54 +1153,189 @@ np_bu_pred_draws_sum <- np_bu_pred_draws %>%
             upper_ci = quantile(.prediction, 0.975))
 
 
+
 np_bu_pred_draws_sum%>% 
   ggplot(aes(NP_BU, mean_fit)) +
   geom_line() +
-  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5)
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
+  labs(x = "Distance to NP_BU (centered and scaled)", 
+       y = "Probability of selection")
 
 
 #AG TIME
-#Let's start with NP_BU
-ag_bu_values <- seq(min(rsf_modified_2022_23$AG, na.rm = TRUE), 
+ag_values <- seq(min(rsf_modified_2022_23$AG, na.rm = TRUE), 
                  max(rsf_modified_2022_23$AG, na.rm = TRUE), 
                  length.out = 1000)
 
-ag_bu_df <- data.frame(
-  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(np_bu_values)),
-  AG = ag_bu_values,
-  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(np_bu_values)),
-  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(np_bu_values)),
-  HW = rep(mean(rsf_modified_2022_23$HW), length(np_bu_values)),
-  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(np_bu_values)),
-  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(np_bu_values)),
-  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(np_bu_values)),
-  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(np_bu_values)),
-  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(np_bu_values)),
-  UM = rep(mean(rsf_modified_2022_23$UM), length(np_bu_values))
+ag_df <- data.frame(
+  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(ag_values)),
+  AG = ag_values,
+  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(ag_values)),
+  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(ag_values)),
+  HW = rep(mean(rsf_modified_2022_23$HW), length(ag_values)),
+  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(ag_values)),
+  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(ag_values)),
+  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(ag_values)),
+  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(ag_values)),
+  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(ag_values)),
+  UM = rep(mean(rsf_modified_2022_23$UM), length(ag_values))
   )
 
 
-ag_bu_pred_draws <- epred_draws(newdata = ag_bu_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000)
+ag_pred_draws <- epred_draws(newdata = ag_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000)
 
-ag_bu_pred_draws_sum <- ag_bu_pred_draws%>%
+ag_pred_draws_sum <- ag_pred_draws%>%
   group_by(AG) %>%
   summarize(mean_fit = mean(.prediction),
             sd_fit = sd(.prediction))
 
-ag_bu_pred_draws_sum <- ag_bu_pred_draws %>%
+ag_pred_draws_sum <- ag_pred_draws %>%
   group_by(AG) %>%
   summarize(mean_fit = mean(.prediction),
             low_ci = quantile(.prediction, 0.025),
             upper_ci = quantile(.prediction, 0.975))
 
 
-ag_bu_pred_draws_sum%>% 
+
+ag_pred_draws_sum%>% 
   ggplot(aes(AG, mean_fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5)
 
+#NP_UB
+np_ub_values <- seq(min(rsf_modified_2022_23$NP_UB, na.rm = TRUE), 
+                 max(rsf_modified_2022_23$NP_UB, na.rm = TRUE), 
+                 length.out = 1000)
+
+np_ub_df <- data.frame(
+  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(np_ub_values)),
+  AG = rep(mean(rsf_modified_2022_23$AG), length(np_ub_values)),
+  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(np_ub_values)),
+  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(np_ub_values)),
+  HW = rep(mean(rsf_modified_2022_23$HW), length(np_ub_values)),
+  NP_UB = np_ub_values,
+  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(np_ub_values)),
+  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(np_ub_values)),
+  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(np_ub_values)),
+  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(np_ub_values)),
+  UM = rep(mean(rsf_modified_2022_23$UM), length(np_ub_values))
+  )
 
 
+np_ub_pred_draws <- epred_draws(newdata = np_ub_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000)
+
+np_ub_pred_draws_sum <- np_ub_pred_draws%>%
+  group_by(NP_UB) %>%
+  summarize(mean_fit = mean(.prediction),
+            sd_fit = sd(.prediction))
+
+np_ub_pred_draws_sum <- np_ub_pred_draws %>%
+  group_by(NP_UB) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+
+np_ub_pred_draws_sum%>% 
+  ggplot(aes(NP_UB, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
+   labs(x = "Distance to NP_UB (centered and scaled)", 
+       y = "Probability of selection")
+
+
+#HP_BU
+
+hp_bu_values <- seq(min(rsf_modified_2022_23$HP_BU, na.rm = TRUE), 
+                 max(rsf_modified_2022_23$HP_BU, na.rm = TRUE), 
+                 length.out = 1000)
+
+hp_bu_df <- data.frame(
+  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(hp_bu_values)),
+  AG = rep(mean(rsf_modified_2022_23$AG), length(hp_bu_values)),
+  HP_BU = hp_bu_values,
+  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(hp_bu_values)),
+  HW = rep(mean(rsf_modified_2022_23$HW), length(hp_bu_values)),
+  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(hp_bu_values)),
+  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(hp_bu_values)),
+  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(hp_bu_values)),
+  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(hp_bu_values)),
+  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(hp_bu_values)),
+  UM = rep(mean(rsf_modified_2022_23$UM), length(hp_bu_values))
+  )
+
+
+hp_bu_pred_draws <- epred_draws(newdata = hp_bu_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000)
+
+hp_bu_pred_draws_sum <- hp_bu_pred_draws%>%
+  group_by(HP_BU) %>%
+  summarize(mean_fit = mean(.prediction),
+            sd_fit = sd(.prediction))
+
+hp_bu_pred_draws_sum <- hp_bu_pred_draws %>%
+  group_by(HP_BU) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+
+hp_bu_pred_draws_sum%>% 
+  ggplot(aes(HP_BU, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
+   labs(x = "Distance to HP_BU (centered and scaled)", 
+       y = "Probability of selection")
+
+
+#Making one facet-wrapped plot
+#First, we must pivot longer.
+np_bu_pred_draws_sum_piv <- np_bu_pred_draws_sum %>%
+  pivot_longer(NP_BU, names_to = "Covariate", values_to = "value")
+
+ag_pred_draws_sum_piv <-ag_pred_draws_sum %>%
+  pivot_longer(AG, names_to = "Covariate", values_to = "value")
+
+np_ub_pred_draws_sum_piv <- np_ub_pred_draws_sum %>%
+  pivot_longer(NP_UB, names_to = "Covariate", values_to = "value")
+
+hp_bu_pred_draws_sum_piv <- hp_bu_pred_draws_sum %>%
+  pivot_longer(HP_BU, names_to = "Covariate", values_to = "value")
+
+#Now, we bind together.
+all_covs_pred <- rbind(np_bu_pred_draws_sum_piv, ag_pred_draws_sum_piv, np_ub_pred_draws_sum_piv, hp_bu_pred_draws_sum_piv)
+
+library(ggplot2)
+library(dplyr)
+
+# Re-ordering the legend for a non-facet_wrapped plot
+all_covs_pred$Covariate <- fct_relevel(all_covs_pred$Covariate, "HP_BU", "NP_UB", "AG", "NP_BU")
+
+#Making a non-facet-wrapped plot
+all_covs_pred %>%
+  ggplot(aes(value, mean_fit)) +
+  geom_line(aes(color = Covariate)) +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci, fill = Covariate), alpha = 0.4) +
+  scale_color_manual(values = c("HP_BU" = "brown", "NP_UB" = "blue", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
+  scale_fill_manual(values = c("HP_BU" = "brown", "NP_UB" = "blue", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
+  labs(x = "Distance to covariate (centered and scaled)", 
+       y = "Probability of selection") +
+  theme_bw()
+
+# Re-ordering the legend for a facet_wrapped plot
+all_covs_pred$Covariate <- fct_relevel(all_covs_pred$Covariate, "NP_BU", "AG", "NP_UB", "HP_BU")
+
+#Making a non-facet-wrapped plot
+all_covs_pred %>%
+  ggplot(aes(value, mean_fit)) +
+  geom_line(aes(color = Covariate)) +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci, fill = Covariate), alpha = 0.5) +
+  scale_color_manual(values = c("HP_BU" = "brown", "NP_UB" = "blue", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
+  scale_fill_manual(values = c("HP_BU" = "brown", "NP_UB" = "blue", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
+  labs(x = "Distance to covariate (centered and scaled)", 
+       y = "Probability of selection") +
+  facet_wrap(~ Covariate, scales = "free") +
+  theme_bw() +
+  theme(legend.position = "none")
 ```
 
 Determining sizes of KDE home ranges
