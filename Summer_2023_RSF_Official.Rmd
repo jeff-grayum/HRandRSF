@@ -1141,11 +1141,6 @@ np_bu_df <- data.frame(
 
 np_bu_pred_draws <- epred_draws(newdata = np_bu_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000)
 
-np_bu_pred_draws_sum <- np_bu_pred_draws%>%
-  group_by(NP_BU) %>%
-  summarize(mean_fit = mean(.prediction),
-            sd_fit = sd(.prediction))
-
 np_bu_pred_draws_sum <- np_bu_pred_draws %>%
   group_by(NP_BU) %>%
   summarize(mean_fit = mean(.prediction),
@@ -1338,6 +1333,190 @@ all_covs_pred %>%
   theme(legend.position = "none")
 ```
 
+```{r}
+#### Pred plots for lumped burned/unburned ####
+#### running bayes linear regression rsf 22_23 burned/unburned ####
+rsf22_23_bayes_burned_unburned_pred <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ bu + n_b + ub,
+
+
+  #Specifying our dataset
+  data = rsf_bu_ub_22_23,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  #prior = c(
+    #set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    #set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    #set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  #),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9),
+  
+  seed = 123,
+  
+  warmup = 5000
+)
+
+
+#Let's start with lumped burned lcov
+bu_values <- seq(min(rsf_bu_ub_22_23$bu, na.rm = TRUE), 
+                 max(rsf_bu_ub_22_23$bu, na.rm = TRUE), 
+                 length.out = 1000)
+
+bu_df <- data.frame(
+  bu = bu_values,
+  ub = rep(mean(rsf_bu_ub_22_23$ub), length(bu_values)),
+  n_b = rep(mean(rsf_bu_ub_22_23$n_b), length(bu_values)))
+
+
+bu_pred_draws <- epred_draws(newdata = bu_df, object = rsf22_23_bayes_burned_unburned_pred, value = ".prediction", seed = 123, ndraws = 10000)
+
+bu_pred_draws_sum <- bu_pred_draws %>%
+  group_by(bu) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+
+
+bu_pred_draws_sum%>% 
+  ggplot(aes(bu, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
+  labs(x = "Distance to burned units (centered and scaled)", 
+       y = "Probability of selection")
+
+#Let's start with lumped burned lcov
+bu_values <- seq(min(rsf_bu_ub_22_23$bu, na.rm = TRUE), 
+                 max(rsf_bu_ub_22_23$bu, na.rm = TRUE), 
+                 length.out = 1000)
+
+bu_df <- data.frame(
+  bu = bu_values,
+  ub = rep(mean(rsf_bu_ub_22_23$ub), length(bu_values)),
+  n_b = rep(mean(rsf_bu_ub_22_23$n_b), length(bu_values)))
+
+
+bu_pred_draws <- epred_draws(newdata = bu_df, object = rsf22_23_bayes_burned_unburned_pred, value = ".prediction", seed = 123, ndraws = 10000)
+
+bu_pred_draws_sum <- bu_pred_draws %>%
+  group_by(bu) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+
+
+bu_pred_draws_sum%>% 
+  ggplot(aes(bu, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
+  labs(x = "Distance to burned units (centered and scaled)", 
+       y = "Probability of selection")
+
+#Let's start with lumped burned lcov
+bu_values <- seq(min(rsf_bu_ub_22_23$bu, na.rm = TRUE), 
+                 max(rsf_bu_ub_22_23$bu, na.rm = TRUE), 
+                 length.out = 1000)
+
+bu_df <- data.frame(
+  bu = bu_values,
+  ub = rep(mean(rsf_bu_ub_22_23$ub), length(bu_values)),
+  n_b = rep(mean(rsf_bu_ub_22_23$n_b), length(bu_values)))
+
+
+bu_pred_draws <- epred_draws(newdata = bu_df, object = rsf22_23_bayes_burned_unburned_pred, value = ".prediction", seed = 123, ndraws = 10000)
+
+bu_pred_draws_sum <- bu_pred_draws %>%
+  group_by(bu) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+
+
+bu_pred_draws_sum%>% 
+  ggplot(aes(bu, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
+  labs(x = "Distance to burned units (centered and scaled)", 
+       y = "Probability of selection")
+
+#Now lumped unburned lcov
+ub_values <- seq(min(rsf_bu_ub_22_23$ub, na.rm = TRUE), 
+                 max(rsf_bu_ub_22_23$ub, na.rm = TRUE), 
+                 length.out = 1000)
+
+ub_df <- data.frame(
+  bu = rep(mean(rsf_bu_ub_22_23$bu), length(ub_values)),
+  ub = ub_values,
+  n_b = rep(mean(rsf_bu_ub_22_23$n_b), length(ub_values)))
+
+
+ub_pred_draws <- epred_draws(newdata = ub_df, object = rsf22_23_bayes_burned_unburned_pred, value = ".prediction", seed = 123, ndraws = 10000)
+
+ub_pred_draws_sum <- ub_pred_draws %>%
+  group_by(ub) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+
+
+ub_pred_draws_sum%>% 
+  ggplot(aes(ub, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
+  labs(x = "Distance to burned units (centered and scaled)", 
+       y = "Probability of selection")
+
+#Now, lumped never burned
+n_b_values <- seq(min(rsf_bu_ub_22_23$n_b, na.rm = TRUE), 
+                 max(rsf_bu_ub_22_23$n_b, na.rm = TRUE), 
+                 length.out = 1000)
+
+n_b_df <- data.frame(
+  bu = rep(mean(rsf_bu_ub_22_23$bu), length(n_b_values)),
+  ub = rep(mean(rsf_bu_ub_22_23$ub), length(n_b_values)),
+  n_b = n_b_values)
+
+
+n_b_pred_draws <- epred_draws(newdata = n_b_df, object = rsf22_23_bayes_burned_unburned_pred, value = ".prediction", seed = 123, ndraws = 10000)
+
+n_b_pred_draws_sum <- n_b_pred_draws %>%
+  group_by(n_b) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+
+
+n_b_pred_draws_sum%>% 
+  ggplot(aes(n_b, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
+  labs(x = "Distance to burned units (centered and scaled)", 
+       y = "Probability of selection")
+
+
+
+
+```
+
+
+
 Determining sizes of KDE home ranges
 ```{r}
 #### Size of KDE home ranges ####
@@ -1466,6 +1645,12 @@ all_hr_95 %>%
   labs(y = "HR Size (ha)",
        title = "Distribution of HR sizes (ha)")
 
+```
+
+Probability of direction
+```{r}
+#### Probability of direction ####
+p_direction(x = pop.rsf_summer2022_23_bayes)
 ```
 
 
