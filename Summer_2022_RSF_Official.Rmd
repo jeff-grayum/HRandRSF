@@ -131,7 +131,8 @@ fate <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Fate/fate_clean_202
 
 #Adding sex to each observation/random location.
 Summer_2022_locs <- Summer_2022_locs %>%
-  left_join(fate %>% select(band_numb, sex), by = "band_numb")
+  left_join(fate %>% 
+              dplyr::select(band_numb, sex), by = "band_numb")
 ```
 
 Creating tibbles for RSF, adding sex info.
@@ -572,7 +573,7 @@ rsfData_summer2022_burned_unburned <- Summer_2022_locs %>%
   nest(indData = !band_numb) %>% 
   #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
   mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
-  filter(n.locs > 30) %>%
+  filter(n.locs > 25) %>%
   #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble (it generated KDE homeranges, UDs and isopleths for each bird).
   mutate(tracks = purrr::map(indData, function(x){
   #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
@@ -598,6 +599,8 @@ rsfData_summer2022_burned_unburned <- Summer_2022_locs %>%
   })) %>%
   #Unnesting data back into original rows.
   unnest(indData) 
+
+
 
 #Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
 rsfData_modified_summer2022_burned_unburned <- rsfData_summer2022_burned_unburned  %>% 
@@ -674,7 +677,7 @@ coefficients_data_no_intercept %>%
   coord_flip() +  # Flip the axis for better visibility
   xlab('Variable') +
   ylab('Beta Coefficient') +
-  ggtitle('Beta coefficients: burned and unburned areas') +
+  ggtitle('Beta coefficients: burned and unburned areas 2022') +
   theme_minimal()
 
 
@@ -1254,7 +1257,7 @@ samp_list_22 <- Summer_2022_locs %>%
   group_by(band_numb) %>%
   summarize(n = n()) %>%
   arrange(n) %>%
-  filter(n > 30) %>%
+  filter(n > 25) %>%
   dplyr::select(band_numb) %>%
   pull(band_numb)
 
@@ -1301,7 +1304,6 @@ plot(Summer_2022_locs_KDE_SPDF, col = as.data.frame(Summer_2022_locs_KDE_SPDF)[,
 #Looking at a data frame of KDE HR sizes across various utilization distributions (e.g, 50%, 90%)
 kde_levels_summer_2022 <- kernel.area(kde_hr_sum_22) 
 
-write.csv(covey_kde_hr_across_levels_2021_22,"/Users/jeffgrayum/Downloads/Clean_Covey_KDE_HR_2021_22.csv", row.names = TRUE)
 
 kde_levels_summer_2022 %>%
   clean_names() %>%
@@ -1329,6 +1331,18 @@ max(kde_95_sum22$hr_size)
 kde_95_sum22 %>%
   ggplot(aes(hr_size)) +
   geom_histogram(bins = 38)
+```
+
+```{r}
+#### Birds trapped each season ####
+
+fate <- readxl::read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Fate/fate_all_birds_clean.xlsx") %>%
+  clean_names()
+
+fate %>% 
+  view()
+
+fate %>% count(course_season)
 ```
 
 

@@ -240,6 +240,12 @@ Combining Summer 2022/23 data.
 rsf_modified_2022_23 <- rbind(
   rsfData_modified_summer2022, rsfData_modified_summer2023
 )
+
+nobo_count <- rsf_modified_2022_23 %>%
+  filter(case_ == TRUE) %>%
+  count(band_numb, sort = TRUE)
+
+mean(nobo_count$n)
 ```
 
 
@@ -375,8 +381,7 @@ ggplot(posterior_draws_long, aes(x = value, fill = landcover)) +
 
 Summer 2022 AND 2023 Bayesian RSF: Looking at all age and sex classes
 ```{r}
-#### Summer 2022 AND 2023; HP and PP burned #### Cannot include HP_BU and HP_UB in the same model (correlation). Same with PP_BU and PP_UB
-
+#### Summer 2022 AND 2023;#### 
 pop.rsf_summer2022_23_bayes <- brm(
   
   #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
@@ -449,10 +454,22 @@ coefficients_data_no_intercept_2022_2023 %>%
   geom_errorbar(aes(ymin = l_95_percent_ci, ymax = u_95_percent_ci), width = 0.2) + 
   geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.5) +  
   coord_flip() +  
-  labs(x = "Land Cover",
-       y = "Beta Coefficient") +
+  labs(x = "Covariate",
+       y = "Estimated posterior beta coefficient") +
   scale_y_continuous(limits = c(-0.2, 0.2)) +
-  theme_bw()
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
 
 coefficients_data_no_intercept_2022_2023 %>%
   ggplot(aes(x = reorder(variable, -estimate), y = odds_ratio)) +
@@ -481,7 +498,7 @@ mcmc_trace(pop.rsf_summer2022_23_bayes_bu,
   theme_bw()
 
 # Get the posterior samples as a data frame (posterior package deprecated)...
-posterior_draws_bu <- as_draws_df(pop.rsf_summer2022_23_bayes_bu)
+posterior_draws_bu <- as_draws_df(pop.rsf_summer2022_23_bayes)
 
 
 #Selecting columns we want to plot, renaming
@@ -509,11 +526,27 @@ posterior_draws_long_bu %>%
   geom_density(alpha = 0.7, position = "jitter") +
   facet_wrap(~factor(landcover, levels = c("NP_BU", "AG","HP_UB", "SS_UB","PP_BU", "SS_BU", "HW", "UM", "NP_UB", "HP_BU")), ncol = 5) +
   theme_minimal() +
-  labs(x = "Posterior Distribution of Beta Coefficients",
+  labs(x = "Distribution of estimated posterior beta coefficient",
       y = "Density") +
   geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
    theme_bw() +
-  theme(legend.position = "none") 
+  theme(legend.position = "none") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12)) +
+    scale_x_continuous(breaks = c(-0.2, 0, 0.2))  
+
+  
  
 ```
 
@@ -828,7 +861,7 @@ Summer_2023_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1
 ```
 
 ```{r}
-#### Creating summer 2022 rsf tibble for burned/unburned ####
+#### Creating summer 2023 rsf tibble for burned/unburned ####
 #Creating tibble for RSF, which includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
 rsfData_summer2023_burned_unburned <- Summer_2023_locs %>% 
   #Converting it to a tibble
@@ -962,7 +995,7 @@ mcmc_trace(pop.rsf_summer2023_bayes_burned_unburned,
 Looking at burned/unburned for combined 2022/23 data
 
 ```{r}
-#### Combining 2022/23 data ####
+#### Combining 2022/23 data for burned / unburned ####
 rsf_bu_ub_22_23 <- rbind(rsfData_modified_summer2022_burned_unburned, rsfData_modified_summer2023_burned_unburned)
 ```
 
@@ -1027,9 +1060,13 @@ print(coefficients_data)
 # Add a new column to store the row names... seems to be the only way to filter out the intercept.
 coefficients_data$Variable <- rownames(coefficients_data)
 
-coefficients_data_no_intercept <- coefficients_data %>%
+coefficients_data_no_intercept_allBU_UB <- coefficients_data %>%
   filter(Variable != "Intercept") %>% 
   clean_names()
+
+writexl::write_xlsx(coefficients_data_no_intercept_allBU_UB, "/Users/jeffgrayum/Downloads/all_bu_ub.xlsx")
+
+
 
 # Filter out the intercept and plot
 coefficients_data_no_intercept %>%
@@ -1038,9 +1075,21 @@ coefficients_data_no_intercept %>%
   geom_errorbar(aes(ymin = l_95_percent_ci, ymax = u_95_percent_ci), width = 0.2) + 
   geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.5) +  
   coord_flip() +  
-  labs(x = "Burn Status",
-       y = "Beta Coefficient") +
-  theme_bw()
+  labs(x = "Burn status",
+       y = "Beta coefficient") +
+  theme_bw() +
+   theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
+
 
 
 # For the trace plots
@@ -1074,13 +1123,26 @@ posterior_draws_long %>%
   geom_density(alpha = 0.7) +
   facet_wrap(~factor(landcover, levels = c("UB", "BU", "NB"))) +
   theme_minimal() +
-  xlab("Posterior Distribution of Beta Coefficients") +
+  xlab("Posterior distribution of beta coefficients") +
   ylab("Density") +
   geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
   theme_bw() +
-  theme(legend.position = "none") 
+  theme(legend.position = "none",
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
+ 
 
-
+#### Probability of direction ####
+p_direction(x = rsf22_23_bayes_burned_unburned)
 ```
 
 Predict plots       
@@ -1328,9 +1390,20 @@ all_covs_pred %>%
   scale_fill_manual(values = c("HP_BU" = "brown", "NP_UB" = "blue", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
   labs(x = "Distance to covariate (centered and scaled)", 
        y = "Probability of selection") +
-  facet_wrap(~ Covariate, scales = "free") +
+  facet_wrap(~ Covariate, scales = "free_x") +
   theme_bw() +
-  theme(legend.position = "none")
+  theme(legend.position = "none") +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
 ```
 
 ```{r}
@@ -1512,7 +1585,8 @@ n_b_pred_draws_sum%>%
 
 
 
-
+#### Probability of direction ####
+p_direction(x = rsf22_23_bayes_burned_unburned)
 ```
 
 
@@ -1653,6 +1727,40 @@ Probability of direction
 p_direction(x = pop.rsf_summer2022_23_bayes)
 ```
 
+```{r}
+#### Dr. Martin's code for plots ####
+pred_plot_NP_BU_JM <- ggplot(np_bu_pred_draws_sum,
+                            aes(x = NP_BU, y = mean_fit),lty = 2) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12)) +
+  xlab("Distance to NP_BU")+
+  ylab("Probability of selection") +
+  scale_x_continuous(breaks=seq(min(np_bu_pred_draws_sum$NP_BU),max(np_bu_pred_draws_sum$NP_BU),length.out = 10),
+                     labels=(round((seq(min(np_bu_pred_draws_sum$NP_BU),max(np_bu_pred_draws_sum$NP_BU),length.out = 10)*sd(binded_22_23_uncs$NP_BU)*2.54+mean(binded_22_23_uncs$NP_BU)*2.54),1)))
+ 
+np_bu_pred_draws_sum%>% 
+  ggplot(aes(NP_BU, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
+  labs(x = "Distance to NP_BU (centered and scaled)", 
+       y = "Probability of selection")
+
+
+
+binded_22_23_uncs <- rbind(rsfData_summer2022, rsfData_summer2023)
+```
 
 
 
