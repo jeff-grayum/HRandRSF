@@ -227,6 +227,7 @@ rsfData_summer2023 <- Summer_2023_locs %>%
   #Unnesting data back into original rows.
   unnest(indData) 
 
+
 rsfData_modified_summer2023 <- rsfData_summer2023 %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
@@ -382,10 +383,10 @@ ggplot(posterior_draws_long, aes(x = value, fill = landcover)) +
 Summer 2022 AND 2023 Bayesian RSF: Looking at all age and sex classes
 ```{r}
 #### Summer 2022 AND 2023;#### 
-pop.rsf_summer2022_23_bayes <- brm(
+#pop.rsf_summer2022_23_bayes <- brm(
   
   #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
-  case | trials(1) ~ AG + UM + NP_UB + NP_BU + NP_UB + PP_BU + HW + HP_BU + HP_UB + SS_UB + SS_BU + (1|band_numb),
+  case | trials(1) ~ AG + UM + NP_UB + NP_BU + NP_UB + PP_BU + PP_UB + HW + HP_BU + HP_UB + SS_UB + SS_BU + (1|band_numb),
 
 
   #Specifying our dataset
@@ -414,7 +415,18 @@ pop.rsf_summer2022_23_bayes <- brm(
   control = list(adapt_delta = 0.9)
 )
 
+#Saving model results
+#saveRDS(pop.rsf_summer2022_23_bayes, "/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/model_RSFsummer2022_23.rds")
+```
+
+```{r} 
+
+#### Visualizing summer 22/23 rsf data ####
 #Printing summary of results.
+
+pop.rsf_summer2022_23_bayes <- readRDS("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/model_RSFsummer2022_23.rds")
+
+
 summary(pop.rsf_summer2022_23_bayes)
 
 # Get the summary of the model
@@ -456,7 +468,7 @@ coefficients_data_no_intercept_2022_2023 %>%
   coord_flip() +  
   labs(x = "Covariate",
        y = "Estimated posterior beta coefficient") +
-  scale_y_continuous(limits = c(-0.2, 0.2)) +
+  scale_y_continuous(limits = c(-0.25, 0.25)) +
   theme_bw() +
   theme(legend.position = "none",
         panel.grid.major=element_blank(),
