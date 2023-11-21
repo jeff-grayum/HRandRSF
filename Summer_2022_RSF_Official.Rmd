@@ -36,7 +36,7 @@ Importing map of study site, setting template for raster stack.
 ```{r}
 ##### Importing map of study site as a shape file #### 
 
-habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2022_LCov_BurnStatus/2022_LCOV_MGMT/2022_LCOV_BurnStatus_V2.shp")
+habitat <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2022/UPDATED_2022_LCOV_MGMT.shp")
 
 #Let's count the land cover types.
 #habitat %>%
@@ -48,10 +48,10 @@ habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2022_LCov_B
 extent(habitat@bbox)
 
 #Creating a column that treats land cover (LCOV_MGMT2) types as a numeric factor.
-habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT2))
+habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT))
 
 #Viewing levels (landc over types aka HABITAT)
-levels(as.factor(habitat$LCOV_MGMT2))
+levels(as.factor(habitat$LCOV_MGMT))
 
 #Quick look
 #head(habitat)
@@ -72,7 +72,7 @@ plot(habitat.raster)
 #windows()
 
 #Viewing habitat shapefile. Land cover types here are now numeric values.
-plot(habitat, col = as.factor(habitat$LCOV_MGMT2))
+plot(habitat, col = as.factor(habitat$LCOV_MGMT))
 ```
 
 Creating our stack of raster layers for summer 2022 RSF
@@ -80,7 +80,7 @@ Creating our stack of raster layers for summer 2022 RSF
 #### Creating raster stack #### 
 
 #Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
-habitats <- levels(as.factor(habitat$LCOV_MGMT2))
+habitats <- levels(as.factor(habitat$LCOV_MGMT))
 
 #Creating a raster list. This will be used in our for loop.
 rasterList <- list()
@@ -90,7 +90,7 @@ rasterList <- list()
 for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
   # i <- 1 (debugger, leave muted unless needed)
   #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
-  hab <- subset(habitat, LCOV_MGMT2 == habitats[i])   
+  hab <- subset(habitat, LCOV_MGMT == habitats[i])   
   #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
   hab$field <- 1 
   # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
@@ -151,7 +151,7 @@ rsfData_summer2022 <- Summer_2022_locs %>%
   nest(indData = !band_numb) %>% 
   #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
   mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
-  filter(n.locs > 30) %>%
+  filter(n.locs > 25) %>%
   #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
   mutate(tracks = purrr::map(indData, function(x){
   #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
@@ -184,6 +184,10 @@ rsfData_summer2022 <- Summer_2022_locs %>%
 rsfData_modified_summer2022 <- rsfData_summer2022 %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+#Creating a non centered/scaled version so we can backtransform the x-axis in our predict plots.
+rsfData_summer22_UCS <- rsfData_summer2022 %>% 
+  mutate(case = ifelse(case_ == T, 1, 0))
 ```
 
 
@@ -458,29 +462,29 @@ Burned/unburned/never burned
 ```{r}
 ##### Looking at burned/unburned/neverburned #### 
 
-habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2022_LCov_BurnStatus/2022_LCOV_MGMT/2022_LCOV_BurnStatus_V2.shp")
+habitat <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2022/UPDATED_2022_LCOV_MGMT.shp")
 
-habitat$LCOV_MGMT2 <- gsub("AG", "n_b", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("WL", "n_b", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("UM", "n_b", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("HW", "n_b", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("NP_UB", "ub", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("PP_UB", "ub", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("HW_UB", "ub", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("SS_UB", "ub", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("HP_UB", "ub", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("NP_BU", "bu", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("PP_BU", "bu", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("HW_BU", "bu", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("SS_BU", "bu", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("HP_BU", "bu", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT <- gsub("AG", "n_b", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("WL", "n_b", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("UM", "n_b", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HW", "n_b", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("NP_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("PP_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HW_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("SS_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HP_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("NP_BU", "bu", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("PP_BU", "bu", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HW_BU", "bu", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("SS_BU", "bu", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HP_BU", "bu", habitat$LCOV_MGMT)
 
 
 
 #Let's count the land cover types.
 habitat %>%
   as.data.frame() %>%
-  count(LCOV_MGMT2, sort = T) %>%
+  count(LCOV_MGMT, sort = T) %>%
   print()
 
 
@@ -488,10 +492,10 @@ habitat %>%
 extent(habitat@bbox)
 
 #Creating a column that treats land cover (LCOV_MGMT2) types as a numeric factor.
-habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT2))
+habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT))
 
 #Viewing levels (landc over types aka HABITAT)
-levels(as.factor(habitat$LCOV_MGMT2))
+levels(as.factor(habitat$LCOV_MGMT))
 
 #Quick look
 #head(habitat)
@@ -512,14 +516,14 @@ plot(habitat.raster)
 #windows()
 
 #Viewing habitat shapefile. Land cover types here are now numeric values.
-plot(habitat, col = as.factor(habitat$LCOV_MGMT2))
+plot(habitat, col = as.factor(habitat$LCOV_MGMT))
 ```
 
 ```{r}
 #### Creating raster stack for burned/unburned #### 
 
 #Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
-habitats <- levels(as.factor(habitat$LCOV_MGMT2))
+habitats <- levels(as.factor(habitat$LCOV_MGMT))
 
 #Creating a raster list. This will be used in our for loop.
 rasterList <- list()
@@ -529,7 +533,7 @@ rasterList <- list()
 for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
   # i <- 1 (debugger, leave muted unless needed)
   #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
-  hab <- subset(habitat, LCOV_MGMT2 == habitats[i])   
+  hab <- subset(habitat, LCOV_MGMT == habitats[i])   
   #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
   hab$field <- 1 
   # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
@@ -1345,4 +1349,301 @@ fate %>%
 fate %>% count(course_season)
 ```
 
+Lets attempt to run a RSF on basal area, only
+```{r}
+#### Basal area RSF ####
+#Importing map of study site, setting template for raster stack.
+
+
+habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2022_LCov_BurnStatus/2022_LCOV_MGMT/2022_LCOV_BurnStatus_V2.shp")
+
+
+#Checking the extent of the bounding box.
+extent(habitat@bbox)
+
+#Creating a column that treats land cover (LCOV_MGMT2) types as a numeric factor.
+habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT2))
+
+#Viewing levels (landc over types aka HABITAT)
+levels(as.factor(habitat$LCOV_MGMT2))
+
+#Quick look
+#head(habitat)
+
+#Creating template raster. Here, we specify crs, extent, and resolution of our raster. For some reason, model won't run with a resolution below 3 meters. This shouldn't be an issues w telemetry data, as we want a larger raster cell size.
+template.raster <- raster(crs = habitat@proj4string,
+       ext = extent(habitat@bbox),
+       res = 10)
+
+
+#Rasterizing the map of study site, filling with land cover type (as numeric factors). Pretty sure this is unnecessary, as it is handled in our for() loop later.
+habitat.raster <- rasterize(x = habitat,
+                            y = template.raster,
+                            field = habitat$hab.factor)
+
+#plotting habitat raster habitat raster
+plot(habitat.raster)
+#windows()
+
+#Viewing habitat shapefile. Land cover types here are now numeric values.
+plot(habitat, col = as.factor(habitat$LCDENSITYS))
+```
+
+Creating our stack of raster layers for summer 2022 RSF
+```{r}
+#### Creating raster stack #### 
+
+#Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
+habitats <- levels(as.factor(habitat$LCOV_MGMT2))
+
+#Creating a raster list. This will be used in our for loop.
+rasterList <- list()
+
+#Creating our for loop. This creates a distance-based raster layer for each of our seven lcov types.
+#Each raster cell in a given lcov layer will hold the distance to the nearest respective lcov type. This value will be 0 if the cell is within the lcov type. 
+for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
+  # i <- 1 (debugger, leave muted unless needed)
+  #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
+  hab <- subset(habitat, LCOV_MGMT2 == habitats[i])   
+  #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
+  hab$field <- 1 
+  # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
+  #We rasterize hab subset in each stack, based on raster layer. We transfer values from hab$field. Lcov types outside of the respective layer (background) are assigned NA. We calc distance from each cell to nearest respective lcov type, creating a dist-based raster layer.
+  rasterList[[i]] <- distance(rasterize(hab, template.raster, field = hab$field, background = NA))
+  #Creating list of dist-based raster layers, naming each element after corresponding lcov type.
+  names(rasterList)[i] <- habitats[i]
+}
+
+#This extracts the extent of each raster layer in our list.
+lapply(rasterList, extent)
+
+#Now we stack our raster layers.
+distanceStack22 <- stack(rasterList)
+
+#Plotting our seven distance-based raster layers.
+plot(distanceStack22)
+```
+
+Importing Summer 2022 data. 
+```{r}
+#### Importing summer locations #### 
+
+#Data set with 1 loc per day, 3 per week.
+#"/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S22locsUnweightedv2.xlsx"
+
+Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S22locsUnweightedv2.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status != "D",
+         status != "N") %>%
+  mutate(date = lubridate::as_date(date)) %>%
+  filter(date > "2022-04-11")
+
+#Importing "fate" spreadsheet, which has sex and age-class associated with each band number (unlike daily locations data)
+fate <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Fate/fate_clean_2021_22.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  rename(band_numb = band_number)
+
+#Adding sex to each observation/random location.
+Summer_2022_locs <- Summer_2022_locs %>%
+  left_join(fate %>% 
+              dplyr::select(band_numb, sex), by = "band_numb")
+```
+
+Creating tibbles for RSF, adding sex info.
+```{r}
+#### Creating Summer 2022 tibbles for RSFs ####
+
+#Creating tibble for RSF, includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
+rsfData_summer2022 <- Summer_2022_locs %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 25) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+
+      #Below we generate x random points within each NOBO's KDE home range.
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack22)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2022 <- rsfData_summer2022 %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+#Creating a non centered/scaled version so we can backtransform the x-axis in our predict plots.
+rsfData_summer22_UCS <- rsfData_summer2022 %>% 
+  mutate(case = ifelse(case_ == T, 1, 0))
+```
+
+Looking at basal area.
+```{r}
+# Load the shapefile
+habitat_basal <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2022/UPDATED_2022_LCOV_MGMT.shp")
+
+# Modify the 'LCDENSITYS' column
+habitat_basal$LCDENSITYS <- gsub("30-60", "med", habitat_basal$LCDENSITYS)
+habitat_basal$LCDENSITYS <- gsub("<30", "low", habitat_basal$LCDENSITYS)
+habitat_basal$LCDENSITYS <- gsub("60-90", "high", habitat_basal$LCDENSITYS)
+habitat_basal$LCDENSITYS <- gsub(">90", "closed", habitat_basal$LCDENSITYS)
+
+# If there are any empty or NA values, replace them with "none"
+habitat_basal$LCDENSITYS[habitat_basal$LCDENSITYS == "" | is.na(habitat_basal$LCDENSITYS)] <- "none"
+```
+
+```{r}
+#Checking the extent of the bounding box.
+extent(habitat_basal@bbox)
+
+#Creating a column that treats land cover (LCOV_MGMT2) types as a numeric factor.
+habitat_basal$hab.factor <- as.numeric(as.factor(habitat_basal$LCDENSITYS))
+
+#Viewing levels (landc over types aka HABITAT)
+levels(as.factor(habitat_basal$LCDENSITYS))
+
+#Quick look
+#head(habitat)
+
+#Creating template raster. Here, we specify crs, extent, and resolution of our raster. For some reason, model won't run with a resolution below 3 meters. This shouldn't be an issues w telemetry data, as we want a larger raster cell size.
+template.raster <- raster(crs = habitat_basal@proj4string,
+       ext = extent(habitat_basal@bbox),
+       res = 10)
+
+
+#Rasterizing the map of study site, filling with land cover type (as numeric factors). Pretty sure this is unnecessary, as it is handled in our for() loop later.
+habitat.raster <- rasterize(x = habitat,
+                            y = template.raster,
+                            field = habitat_basal$hab.factor)
+
+#plotting habitat raster habitat raster
+plot(habitat.raster)
+#windows()
+
+#Viewing habitat shapefile. Land cover types here are now numeric values.
+plot(habitat, col = as.factor(habitat_basal$LCDENSITYS))
+
+```
+
+Creating our stack of raster layers. This will be used in Summer 2022 RSF for basal area.
+```{r}
+#### Creating raster stack for basal area #### 
+
+#Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
+habitats <- levels(as.factor(habitat_basal$LCDENSITYS))
+
+#Creating a raster list. This will be used in our for loop.
+rasterList <- list()
+
+#Creating our for loop. This creates a distance-based raster layer for each of our seven lcov types.
+#Each raster cell in a given lcov layer will hold the distance to the nearest respective lcov type. This value will be 0 if the cell is within the lcov type. 
+for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
+  # i <- 1 (debugger, leave muted unless needed)
+  #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
+  hab <- subset(habitat_basal, LCDENSITYS == habitats[i])   
+  #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
+  hab$field <- 1 
+  # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
+  #We rasterize hab subset in each stack, based on raster layer. We transfer values from hab$field. Lcov types outside of the respective layer (background) are assigned NA. We calc distance from each cell to nearest respective lcov type, creating a dist-based raster layer.
+  rasterList[[i]] <- distance(rasterize(hab, template.raster, field = hab$field, background = NA))
+  #Creating list of dist-based raster layers, naming each element after corresponding lcov type.
+  names(rasterList)[i] <- habitats[i]
+}
+
+#This extracts the extent of each raster layer in our list.
+lapply(rasterList, extent)
+
+#Now we stack our raster layers.
+distanceStack22_basal <- stack(rasterList)
+
+plot(distanceStack22_basal)
+```
+
+Importing Summer 2022 data. 
+```{r}
+#### Importing Summer 2023 locations #### 
+
+#/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S23locsUnweighted.xlsx
+
+Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S22locsUnweightedv2.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status == "A") %>%
+  mutate(date = lubridate::as_date(date)) %>%
+  filter(date >= "2022-04-12",
+         date <= "2022-09-30")
+
+```
+
+```{r}
+rsfData_summer2022_basal <- Summer_2022_locs %>% 
+  #Converting it to a tibble
+   as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 25) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble (it generated KDE homeranges, UDs and isopleths for each bird).
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+      #Below we generate x random points within each NOBO's KDE home range (95% UD).
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack23_basal)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2022_basal <- rsfData_summer2022_basal  %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(closed:none), .funs = function(x){as.numeric(scale(x, center = T))}) 
+```
 

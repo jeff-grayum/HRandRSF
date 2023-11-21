@@ -49,6 +49,7 @@ library(posterior)
 library(distributional)
 library(posterior)
 library(adehabitatHR)
+library(bayestestR)
 
 
 options(mc.cores = 4)
@@ -59,23 +60,20 @@ Importing map of study site, setting template for raster stack.
 ```{r}
 ##### Importing map of study site as a shape file #### 
 
-habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2023_LCov_BurnStatus/2023_LCOV_BurnStatus_V2.shp")
+habitat <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2023/UPDATED_2023_LCOV_MGMT.shp")
 
-#Let's count the land cover types.
 habitat %>%
-  as.data.frame() %>%
-  count(LCOV_MGMT2, sort = T) %>%
-  print()
-
-
+  as.tibble() %>%
+  view()
+  
 #Checking the extent of the bounding box.
 extent(habitat@bbox)
 
 #Creating a column that treats land cover (LCOV_MGMT2) types as a numeric factor.
-habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT2))
+habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT))
 
 #Viewing levels (landc over types aka HABITAT)
-levels(as.factor(habitat$LCOV_MGMT2))
+levels(as.factor(habitat$LCOV_MGMT))
 
 #Quick look
 #head(habitat)
@@ -96,7 +94,9 @@ plot(habitat.raster)
 #windows()
 
 #Viewing habitat shapefile. Land cover types here are now numeric values.
-plot(habitat, col = as.factor(habitat$LCOV_MGMT2))
+plot(habitat, col = as.factor(habitat$LCOV_MGMT))
+
+
 ```
 
 Creating our stack of raster layers. This will be used in Summer 2023 RSF.
@@ -104,7 +104,7 @@ Creating our stack of raster layers. This will be used in Summer 2023 RSF.
 #### Creating raster stack #### 
 
 #Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
-habitats <- levels(as.factor(habitat$LCOV_MGMT2))
+habitats <- levels(as.factor(habitat$LCOV_MGMT))
 
 #Creating a raster list. This will be used in our for loop.
 rasterList <- list()
@@ -114,7 +114,7 @@ rasterList <- list()
 for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
   # i <- 1 (debugger, leave muted unless needed)
   #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
-  hab <- subset(habitat, LCOV_MGMT2 == habitats[i])   
+  hab <- subset(habitat, LCOV_MGMT == habitats[i])   
   #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
   hab$field <- 1 
   # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
@@ -227,26 +227,28 @@ rsfData_summer2023 <- Summer_2023_locs %>%
   #Unnesting data back into original rows.
   unnest(indData) 
 
-
+#Adding column case (our response variable) and centering and scaling covariates.
 rsfData_modified_summer2023 <- rsfData_summer2023 %>% 
   mutate(case = ifelse(case_ == T, 1, 0)) %>%
   mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+
+#Creating a non centered/scaled version so we can back transform our x-axis on predict plots.
+rsfData_summer23_UCS <- rsfData_summer2023 %>% 
+  mutate(case = ifelse(case_ == T, 1, 0))
 
 ```
 
 Combining Summer 2022/23 data.
 ```{r}
 #### Combining summer 2022/23 data ####
-
+#Centered/scaled version
 rsf_modified_2022_23 <- rbind(
   rsfData_modified_summer2022, rsfData_modified_summer2023
 )
 
-nobo_count <- rsf_modified_2022_23 %>%
-  filter(case_ == TRUE) %>%
-  count(band_numb, sort = TRUE)
-
-mean(nobo_count$n)
+#non centered/scaled version
+rsfData22_23_UCS <- rbind(rsfData_summer2022, rsfData_summer2023)
 ```
 
 
@@ -416,7 +418,7 @@ Summer 2022 AND 2023 Bayesian RSF: Looking at all age and sex classes
 )
 
 #Saving model results
-#saveRDS(pop.rsf_summer2022_23_bayes, "/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/model_RSFsummer2022_23.rds")
+#saveRDS(pop.rsf_summer2022_23_bayes, "/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/UPDATED_model_RSFsummer2022_23.rds")
 ```
 
 ```{r} 
@@ -424,7 +426,7 @@ Summer 2022 AND 2023 Bayesian RSF: Looking at all age and sex classes
 #### Visualizing summer 22/23 rsf data ####
 #Printing summary of results.
 
-pop.rsf_summer2022_23_bayes <- readRDS("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/model_RSFsummer2022_23.rds")
+pop.rsf_summer2022_23_bayes <- readRDS("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/UPDATED_model_RSFsummer2022_23.rds")
 
 
 summary(pop.rsf_summer2022_23_bayes)
@@ -457,7 +459,7 @@ coefficients_data_no_intercept <- coefficients_data %>%
 coefficients_data_no_intercept_2022_2023 <- coefficients_data_no_intercept %>%
   clean_names()
 
-#writexl::write_xlsx(coefficients_data_no_intercept_2022_2023, "/Volumes/Samsung_T5/ThesisPlots/Ch1/betasLCOV22_23.xlsx")
+#writexl::write_xlsx(coefficients_data_no_intercept_2022_2023, "/Volumes/Samsung_T5/ThesisPlots/Ch1/UPDATED_betasLCOV22_23.xlsx")
 
 #plotting beta coefficients and confidence levels
 coefficients_data_no_intercept_2022_2023 %>%
@@ -496,12 +498,13 @@ coefficients_data_no_intercept_2022_2023 %>%
   labs(x = "Land Cover",
        y = "Beta Coefficient") +
   scale_y_continuous(limits = c(-0.2, 0.2)) +
-  theme_bw()
+  theme_bw() +
+  theme(element_text("Times New Roman"))
 
 
 
 # For the trace plots
-mcmc_trace(pop.rsf_summer2022_23_bayes_bu, 
+mcmc_trace(pop.rsf_summer2022_23_bayes, 
            pars = c("b_Intercept", "b_AG", "b_UM", "b_NP_UB", "b_NP_BU", "b_PP_BU", "b_HW", "b_HP_BU", "b_SS_UB", "b_SS_BU"),
            n_warmup = 5000,
            facet_args = list(ncol = 2)) +
@@ -510,11 +513,11 @@ mcmc_trace(pop.rsf_summer2022_23_bayes_bu,
   theme_bw()
 
 # Get the posterior samples as a data frame (posterior package deprecated)...
-posterior_draws_bu <- as_draws_df(pop.rsf_summer2022_23_bayes)
+posterior_draws <- as_draws_df(pop.rsf_summer2022_23_bayes)
 
 
 #Selecting columns we want to plot, renaming
-posterior_draws_bu <- posterior_draws_bu %>%
+posterior_draws <- posterior_draws %>%
   as_tibble() %>%
   dplyr::select(starts_with("b_"), -b_Intercept) %>%
   rename(AG = b_AG,
@@ -524,21 +527,22 @@ posterior_draws_bu <- posterior_draws_bu %>%
          NP_BU = b_NP_BU,
          NP_UB = b_NP_UB,
          PP_BU = b_PP_BU,
+         PP_UB = b_PP_UB,
          SS_BU = b_SS_BU,
          SS_UB = b_SS_UB,
          UM = b_UM)
 
 # Pivoting long, so we can facet wrap by land cover type
-posterior_draws_long_bu <- posterior_draws_bu %>%
+posterior_draws_long <- posterior_draws %>%
   pivot_longer(cols = AG:SS_BU, names_to = "landcover", values_to = "value")
 
 # plotting density of posterior draws
-posterior_draws_long_bu %>%
+posterior_draws_long %>%
   ggplot(aes(x = value, fill = landcover)) +
-  geom_density(alpha = 0.7, position = "jitter") +
-  facet_wrap(~factor(landcover, levels = c("NP_BU", "AG","HP_UB", "SS_UB","PP_BU", "SS_BU", "HW", "UM", "NP_UB", "HP_BU")), ncol = 5) +
+  geom_density(alpha = 0.8, position = "jitter") +
+  facet_wrap(~factor(landcover, levels = c("NP_BU", "SS_UB", "AG", "HP_UB", "PP_UB", "PP_BU", "UM", "SS_BU", "NP_UB", "HW", "HP_BU")), ncol = 4) +
   theme_minimal() +
-  labs(x = "Distribution of estimated posterior beta coefficient",
+  labs(x = "Distribution of posterior beta coefficient estimates",
       y = "Density") +
   geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
    theme_bw() +
@@ -556,10 +560,19 @@ posterior_draws_long_bu %>%
         legend.title = element_text(colour="black",size=12),
         legend.text = element_text(colour="black",size=12),
         axis.text.y = element_text(colour="black",size=12)) +
-    scale_x_continuous(breaks = c(-0.2, 0, 0.2))  
+    scale_x_continuous(breaks = c(-0.2, 0, 0.2)) +
+  scale_fill_manual(values = c("AG" = "#FFFF00",  # Yellow
+                             "NP_BU" = "#006400", "NP_UB" = "#006400",  # Forest Green
+                             "HW" = "#422305",  # Dark Brown
+                             "SS_UB" = "#808080", "SS_BU" = "#808080",  # Gray
+                             "PP_UB" = "#0000FF", "PP_BU" = "#0000FF",  # Blue
+                             "HP_UB" = "brown", "HP_BU" = "brown",  # Greenish Brown
+                             "UM" = "#000000"))  # Black
 
   
  
+#### Probability of direction ####
+p_direction(x = pop.rsf_summer2022_23_bayes)
 ```
 
 
@@ -770,29 +783,29 @@ Burned/unburned/never burned
 ```{r}
 ##### Looking at burned/unburned/neverburned #### 
 
-habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2023_LCov_BurnStatus/2023_LCOV_BurnStatus_V2.shp")
+habitat <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2023/UPDATED_2023_LCOV_MGMT.shp")
 
-habitat$LCOV_MGMT2 <- gsub("AG", "n_b", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("WL", "n_b", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("UM", "n_b", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("HW", "n_b", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("NP_UB", "ub", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("PP_UB", "ub", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("HW_UB", "ub", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("SS_UB", "ub", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("HP_UB", "ub", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("NP_BU", "bu", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("PP_BU", "bu", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("HW_BU", "bu", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("SS_BU", "bu", habitat$LCOV_MGMT2)
-habitat$LCOV_MGMT2 <- gsub("HP_BU", "bu", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT <- gsub("AG", "n_b", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("WL", "n_b", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("UM", "n_b", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HW", "n_b", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("NP_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("PP_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HW_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("SS_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HP_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("NP_BU", "bu", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("PP_BU", "bu", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HW_BU", "bu", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("SS_BU", "bu", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HP_BU", "bu", habitat$LCOV_MGMT)
 
 
 
 #Let's count the land cover types.
 habitat %>%
   as.data.frame() %>%
-  count(LCOV_MGMT2, sort = T) %>%
+  count(LCOV_MGMT, sort = T) %>%
   print()
 
 
@@ -800,10 +813,10 @@ habitat %>%
 extent(habitat@bbox)
 
 #Creating a column that treats land cover (LCOV_MGMT2) types as a numeric factor.
-habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT2))
+habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT))
 
 #Viewing levels (landc over types aka HABITAT)
-levels(as.factor(habitat$LCOV_MGMT2))
+levels(as.factor(habitat$LCOV_MGMT))
 
 #Quick look
 #head(habitat)
@@ -824,14 +837,14 @@ plot(habitat.raster)
 #windows()
 
 #Viewing habitat shapefile. Land cover types here are now numeric values.
-plot(habitat, col = as.factor(habitat$LCOV_MGMT2))
+plot(habitat, col = as.factor(habitat$LCOV_MGMT))
 ```
 
 ```{r}
 #### Creating raster stack for burned/unburned #### 
 
 #Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
-habitats <- levels(as.factor(habitat$LCOV_MGMT2))
+habitats <- levels(as.factor(habitat$LCOV_MGMT))
 
 #Creating a raster list. This will be used in our for loop.
 rasterList <- list()
@@ -841,7 +854,7 @@ rasterList <- list()
 for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
   # i <- 1 (debugger, leave muted unless needed)
   #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
-  hab <- subset(habitat, LCOV_MGMT2 == habitats[i])   
+  hab <- subset(habitat, LCOV_MGMT == habitats[i])   
   #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
   hab$field <- 1 
   # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
@@ -877,7 +890,7 @@ Summer_2023_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1
 #Creating tibble for RSF, which includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
 rsfData_summer2023_burned_unburned <- Summer_2023_locs %>% 
   #Converting it to a tibble
-  as_tibble() %>%
+   as_tibble() %>%
    #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
   mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
          DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
@@ -886,7 +899,7 @@ rsfData_summer2023_burned_unburned <- Summer_2023_locs %>%
   nest(indData = !band_numb) %>% 
   #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
   mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
-  filter(n.locs > 30) %>%
+  filter(n.locs > 25) %>%
   #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble (it generated KDE homeranges, UDs and isopleths for each bird).
   mutate(tracks = purrr::map(indData, function(x){
   #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
@@ -912,6 +925,7 @@ rsfData_summer2023_burned_unburned <- Summer_2023_locs %>%
   })) %>%
   #Unnesting data back into original rows.
   unnest(indData) 
+
 
 #Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
 rsfData_modified_summer2023_burned_unburned <- rsfData_summer2023_burned_unburned  %>% 
@@ -1047,6 +1061,11 @@ rsf22_23_bayes_burned_unburned <- brm(
   warmup = 5000
 )
 
+#Saving model results
+saveRDS(rsf22_23_bayes_burned_unburned, "/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/UPDATED_rsf22_23_bayes_burned_unburned.rds")
+
+rsf22_23_bayes_burned_unburned <- readRDS("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/UPDATED_rsf22_23_bayes_burned_unburned.rds")
+
 #Printing summary of results.
 summary(rsf22_23_bayes_burned_unburned)
 
@@ -1076,19 +1095,28 @@ coefficients_data_no_intercept_allBU_UB <- coefficients_data %>%
   filter(Variable != "Intercept") %>% 
   clean_names()
 
-writexl::write_xlsx(coefficients_data_no_intercept_allBU_UB, "/Users/jeffgrayum/Downloads/all_bu_ub.xlsx")
+writexl::write_xlsx(coefficients_data_no_intercept_allBU_UB, "/Users/jeffgrayum/Downloads/UPDATED_all_bu_ubFixed.xlsx")
 
+
+#Renaming 
+coefficients_data_no_intercept_allBU_UB <- coefficients_data_no_intercept_allBU_UB %>%
+  mutate(variable = case_when(
+    variable == "bu" ~ "BU",
+    variable == "ub" ~ "UB",
+    variable == "n_b" ~ "NB",
+    TRUE ~ variable  # This keeps all other values as they are
+  ))
 
 
 # Filter out the intercept and plot
-coefficients_data_no_intercept %>%
+coefficients_data_no_intercept_allBU_UB %>%
   ggplot(aes(x = reorder(variable, -estimate), y = estimate)) +
   geom_point() + 
   geom_errorbar(aes(ymin = l_95_percent_ci, ymax = u_95_percent_ci), width = 0.2) + 
   geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.5) +  
   coord_flip() +  
-  labs(x = "Burn status",
-       y = "Beta coefficient") +
+  labs(x = "Treatment",
+       y = "Estimated posterior beta coefficient") +
   theme_bw() +
    theme(panel.grid.major=element_blank(),
         panel.grid.minor=element_blank(),
@@ -1114,11 +1142,11 @@ mcmc_trace(rsf22_23_bayes_burned_unburned,
   ylab("Parameter Estimate")
 
 # Get the posterior samples as a data frame (posterior package deprecated)...
-posterior_draws_bu <- as_draws_df(rsf22_23_bayes_burned_unburned)
+posterior_draws_buub <- as_draws_df(rsf22_23_bayes_burned_unburned)
 
 
 #Selecting columns we want to plot, renaming
-posterior_draws <- posterior_draws_bu %>%
+posterior_draws <- posterior_draws_buub %>%
   as_tibble() %>%
   dplyr::select(starts_with("b_"), -b_Intercept) %>%
   rename(BU = b_bu,
@@ -1133,9 +1161,8 @@ posterior_draws_long <- posterior_draws %>%
 posterior_draws_long %>%
   ggplot(aes(x = value, fill = landcover)) +
   geom_density(alpha = 0.7) +
-  facet_wrap(~factor(landcover, levels = c("UB", "BU", "NB"))) +
-  theme_minimal() +
-  xlab("Posterior distribution of beta coefficients") +
+  facet_wrap(~factor(landcover, levels = c("BU", "UB", "NB"))) +
+  xlab("Distribution of posterior beta coefficient estimates") +
   ylab("Density") +
   geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
   theme_bw() +
@@ -1159,12 +1186,12 @@ p_direction(x = rsf22_23_bayes_burned_unburned)
 
 Predict plots       
 ```{r}
-#### Playing with predict plots ####
+#### Predict plots ####
 
 pred_model <-  brm(
   
   #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
-  case | trials(1) ~ AG + UM + NP_UB +NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU,
+  case | trials(1) ~ AG + UM + NP_UB +NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU + (1|band_numb),
 
 
   #Specifying our dataset
@@ -1209,11 +1236,12 @@ np_bu_df <- data.frame(
   PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(np_bu_values)),
   SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(np_bu_values)),
   SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(np_bu_values)),
-  UM = rep(mean(rsf_modified_2022_23$UM), length(np_bu_values))
-  )
+  UM = rep(mean(rsf_modified_2022_23$UM), length(np_bu_values)),
+  band_numb = sample(rsf_modified_2022_23$band_numb, size = length(np_bu_values), replace = TRUE)
+)
 
 
-np_bu_pred_draws <- epred_draws(newdata = np_bu_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000)
+np_bu_pred_draws <- epred_draws(newdata = np_bu_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(1|band_numb))
 
 np_bu_pred_draws_sum <- np_bu_pred_draws %>%
   group_by(NP_BU) %>%
@@ -1221,14 +1249,32 @@ np_bu_pred_draws_sum <- np_bu_pred_draws %>%
             low_ci = quantile(.prediction, 0.025),
             upper_ci = quantile(.prediction, 0.975))
 
-
+summary(np_bu_pred_draws)
 
 np_bu_pred_draws_sum%>% 
   ggplot(aes(NP_BU, mean_fit)) +
   geom_line() +
-  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "#006400", alpha = 0.4) +
   labs(x = "Distance to NP_BU (centered and scaled)", 
-       y = "Probability of selection")
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
+
+
+#scale_x_continuous(breaks=seq(min(np_bu_pred_draws_sum$NP_BU),max(np_bu_pred_draws_sum$NP_BU),length.out = 10),
+                     #labels=(round((seq(min(np_bu_pred_draws_sum$NP_BU),max(np_bu_pred_draws_sum$NP_BU),length.out = 10)*sd(rsfData22_23_UCS$NP_BU) +mean(rsfData22_23_UCS$NP_BU)),1))) 
+
+
 
 
 #AG TIME
@@ -1247,16 +1293,12 @@ ag_df <- data.frame(
   PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(ag_values)),
   SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(ag_values)),
   SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(ag_values)),
-  UM = rep(mean(rsf_modified_2022_23$UM), length(ag_values))
+  UM = rep(mean(rsf_modified_2022_23$UM), length(ag_values)),
+  band_numb = sample(rsf_modified_2022_23$band_numb, size = length(ag_values), replace = TRUE)
   )
 
 
-ag_pred_draws <- epred_draws(newdata = ag_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000)
-
-ag_pred_draws_sum <- ag_pred_draws%>%
-  group_by(AG) %>%
-  summarize(mean_fit = mean(.prediction),
-            sd_fit = sd(.prediction))
+ag_pred_draws <- epred_draws(newdata = ag_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(band | numb))
 
 ag_pred_draws_sum <- ag_pred_draws %>%
   group_by(AG) %>%
@@ -1271,88 +1313,87 @@ ag_pred_draws_sum%>%
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5)
 
-#NP_UB
-np_ub_values <- seq(min(rsf_modified_2022_23$NP_UB, na.rm = TRUE), 
-                 max(rsf_modified_2022_23$NP_UB, na.rm = TRUE), 
+#SS_UB
+ss_ub_values <- seq(min(rsf_modified_2022_23$SS_UB, na.rm = TRUE), 
+                 max(rsf_modified_2022_23$SS_UB, na.rm = TRUE), 
                  length.out = 1000)
 
-np_ub_df <- data.frame(
-  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(np_ub_values)),
-  AG = rep(mean(rsf_modified_2022_23$AG), length(np_ub_values)),
-  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(np_ub_values)),
-  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(np_ub_values)),
-  HW = rep(mean(rsf_modified_2022_23$HW), length(np_ub_values)),
-  NP_UB = np_ub_values,
-  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(np_ub_values)),
-  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(np_ub_values)),
-  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(np_ub_values)),
-  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(np_ub_values)),
-  UM = rep(mean(rsf_modified_2022_23$UM), length(np_ub_values))
+ss_ub_df <- data.frame(
+  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(ss_ub_values)),
+  AG = rep(mean(rsf_modified_2022_23$AG), length(ss_ub_values)),
+  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(ss_ub_values)),
+  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(ss_ub_values)),
+  HW = rep(mean(rsf_modified_2022_23$HW), length(ss_ub_values)),
+  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(ss_ub_values)),
+  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(ss_ub_values)),
+  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(ss_ub_values)),
+  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(ss_ub_values)),
+  SS_UB = ss_ub_values,
+  UM = rep(mean(rsf_modified_2022_23$UM), length(ss_ub_values)),
+  band_numb = sample(rsf_modified_2022_23$band_numb, size = length(ss_ub_values), replace = TRUE)
   )
 
 
-np_ub_pred_draws <- epred_draws(newdata = np_ub_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000)
+ss_ub_pred_draws <- epred_draws(newdata = ss_ub_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(1 | band_numb))
 
-np_ub_pred_draws_sum <- np_ub_pred_draws%>%
-  group_by(NP_UB) %>%
-  summarize(mean_fit = mean(.prediction),
-            sd_fit = sd(.prediction))
 
-np_ub_pred_draws_sum <- np_ub_pred_draws %>%
-  group_by(NP_UB) %>%
+
+ss_ub_pred_draws_sum <- ss_ub_pred_draws %>%
+  group_by(SS_UB) %>%
   summarize(mean_fit = mean(.prediction),
             low_ci = quantile(.prediction, 0.025),
             upper_ci = quantile(.prediction, 0.975))
 
 
-np_ub_pred_draws_sum%>% 
-  ggplot(aes(NP_UB, mean_fit)) +
+ss_ub_pred_draws_sum%>% 
+  ggplot(aes(SS_UB, mean_fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
-   labs(x = "Distance to NP_UB (centered and scaled)", 
+   labs(x = "Distance to SS_UB (centered and scaled)", 
        y = "Probability of selection")
 
 
-#HP_BU
+#HW
 
-hp_bu_values <- seq(min(rsf_modified_2022_23$HP_BU, na.rm = TRUE), 
-                 max(rsf_modified_2022_23$HP_BU, na.rm = TRUE), 
+hw_values <- seq(min(rsf_modified_2022_23$HW, na.rm = TRUE), 
+                 max(rsf_modified_2022_23$HW, na.rm = TRUE), 
                  length.out = 1000)
 
-hp_bu_df <- data.frame(
-  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(hp_bu_values)),
-  AG = rep(mean(rsf_modified_2022_23$AG), length(hp_bu_values)),
-  HP_BU = hp_bu_values,
-  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(hp_bu_values)),
-  HW = rep(mean(rsf_modified_2022_23$HW), length(hp_bu_values)),
-  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(hp_bu_values)),
-  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(hp_bu_values)),
-  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(hp_bu_values)),
-  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(hp_bu_values)),
-  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(hp_bu_values)),
-  UM = rep(mean(rsf_modified_2022_23$UM), length(hp_bu_values))
+hw_df <- data.frame(
+  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(hw_values)),
+  AG = rep(mean(rsf_modified_2022_23$AG), length(hw_values)),
+  HP_BU = rep(mean(rsf_modified_2022_23$HP_UB), length(hw_values)),
+  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(hw_values)),
+  HW = hw_values,
+  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(hw_values)),
+  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(hw_values)),
+  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(hw_values)),
+  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(hw_values)),
+  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(hw_values)),
+  UM = rep(mean(rsf_modified_2022_23$UM), length(hw_values)),
+  band_numb = sample(rsf_modified_2022_23$band_numb, size = length(hw_values), replace = TRUE)
   )
 
 
-hp_bu_pred_draws <- epred_draws(newdata = hp_bu_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000)
+hw_pred_draws <- epred_draws(newdata = hw_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(1 | band_numb))
 
-hp_bu_pred_draws_sum <- hp_bu_pred_draws%>%
-  group_by(HP_BU) %>%
+hw_pred_draws_sum <- hw_pred_draws%>%
+  group_by(HW) %>%
   summarize(mean_fit = mean(.prediction),
             sd_fit = sd(.prediction))
 
-hp_bu_pred_draws_sum <- hp_bu_pred_draws %>%
-  group_by(HP_BU) %>%
+hw_pred_draws_sum <- hw_pred_draws %>%
+  group_by(HW) %>%
   summarize(mean_fit = mean(.prediction),
             low_ci = quantile(.prediction, 0.025),
             upper_ci = quantile(.prediction, 0.975))
 
 
-hp_bu_pred_draws_sum%>% 
-  ggplot(aes(HP_BU, mean_fit)) +
+hw_pred_draws_sum%>% 
+  ggplot(aes(HW, mean_fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
-   labs(x = "Distance to HP_BU (centered and scaled)", 
+   labs(x = "Distance to HW (centered and scaled)", 
        y = "Probability of selection")
 
 
@@ -1364,42 +1405,40 @@ np_bu_pred_draws_sum_piv <- np_bu_pred_draws_sum %>%
 ag_pred_draws_sum_piv <-ag_pred_draws_sum %>%
   pivot_longer(AG, names_to = "Covariate", values_to = "value")
 
-np_ub_pred_draws_sum_piv <- np_ub_pred_draws_sum %>%
-  pivot_longer(NP_UB, names_to = "Covariate", values_to = "value")
+ss_ub_pred_draws_sum_piv <- ss_ub_pred_draws_sum %>%
+  pivot_longer(SS_UB, names_to = "Covariate", values_to = "value")
 
-hp_bu_pred_draws_sum_piv <- hp_bu_pred_draws_sum %>%
-  pivot_longer(HP_BU, names_to = "Covariate", values_to = "value")
+hw_pred_draws_sum_piv <- hw_pred_draws_sum %>%
+  pivot_longer(HW, names_to = "Covariate", values_to = "value")
 
 #Now, we bind together.
-all_covs_pred <- rbind(np_bu_pred_draws_sum_piv, ag_pred_draws_sum_piv, np_ub_pred_draws_sum_piv, hp_bu_pred_draws_sum_piv)
+all_covs_pred <- rbind(np_bu_pred_draws_sum_piv, ag_pred_draws_sum_piv, ss_ub_pred_draws_sum_piv, hw_pred_draws_sum_piv)
 
-library(ggplot2)
-library(dplyr)
 
 # Re-ordering the legend for a non-facet_wrapped plot
-all_covs_pred$Covariate <- fct_relevel(all_covs_pred$Covariate, "HP_BU", "NP_UB", "AG", "NP_BU")
+all_covs_pred$Covariate <- fct_relevel(all_covs_pred$Covariate, "HW", "SS_UB", "AG", "NP_BU")
 
 #Making a non-facet-wrapped plot
 all_covs_pred %>%
   ggplot(aes(value, mean_fit)) +
   geom_line(aes(color = Covariate)) +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci, fill = Covariate), alpha = 0.4) +
-  scale_color_manual(values = c("HP_BU" = "brown", "NP_UB" = "blue", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
-  scale_fill_manual(values = c("HP_BU" = "brown", "NP_UB" = "blue", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
+  scale_color_manual(values = c("HW" = "#422305", "SS_UB" = "gray50", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
+  scale_fill_manual(values = c("HW" = "#422305", "SS_UB" = "gray50", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
   labs(x = "Distance to covariate (centered and scaled)", 
        y = "Probability of selection") +
   theme_bw()
 
 # Re-ordering the legend for a facet_wrapped plot
-all_covs_pred$Covariate <- fct_relevel(all_covs_pred$Covariate, "NP_BU", "AG", "NP_UB", "HP_BU")
+all_covs_pred$Covariate <- fct_relevel(all_covs_pred$Covariate, "NP_BU","SS_UB", "AG", "HW")
 
 #Making a non-facet-wrapped plot
 all_covs_pred %>%
   ggplot(aes(value, mean_fit)) +
-  geom_line(aes(color = Covariate)) +
-  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci, fill = Covariate), alpha = 0.5) +
-  scale_color_manual(values = c("HP_BU" = "brown", "NP_UB" = "blue", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
-  scale_fill_manual(values = c("HP_BU" = "brown", "NP_UB" = "blue", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci, fill = Covariate), alpha = 0.6) +
+  scale_color_manual(values = c("HW" = "#422305", "SS_UB" = "gray50", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
+  scale_fill_manual(values = c("HW" = "#422305", "SS_UB" = "gray50", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
   labs(x = "Distance to covariate (centered and scaled)", 
        y = "Probability of selection") +
   facet_wrap(~ Covariate, scales = "free_x") +
@@ -1415,7 +1454,7 @@ all_covs_pred %>%
         axis.title.x=element_text(colour="black",size=12),
         legend.title = element_text(colour="black",size=12),
         legend.text = element_text(colour="black",size=12),
-        axis.text.y = element_text(colour="black",size=12))
+        axis.text.y = element_text(colour="black",size=12)) 
 ```
 
 ```{r}
@@ -1760,7 +1799,7 @@ pred_plot_NP_BU_JM <- ggplot(np_bu_pred_draws_sum,
   xlab("Distance to NP_BU")+
   ylab("Probability of selection") +
   scale_x_continuous(breaks=seq(min(np_bu_pred_draws_sum$NP_BU),max(np_bu_pred_draws_sum$NP_BU),length.out = 10),
-                     labels=(round((seq(min(np_bu_pred_draws_sum$NP_BU),max(np_bu_pred_draws_sum$NP_BU),length.out = 10)*sd(binded_22_23_uncs$NP_BU)*2.54+mean(binded_22_23_uncs$NP_BU)*2.54),1)))
+                     labels=(round((seq(min(np_bu_pred_draws_sum$NP_BU),max(np_bu_pred_draws_sum$NP_BU),length.out = 10)*sd(rsfData22_23_UCS$NP_BU) +mean(rsfData22_23_UCS$NP_BU)),1))) 
  
 np_bu_pred_draws_sum%>% 
   ggplot(aes(NP_BU, mean_fit)) +
@@ -1774,5 +1813,355 @@ np_bu_pred_draws_sum%>%
 binded_22_23_uncs <- rbind(rsfData_summer2022, rsfData_summer2023)
 ```
 
+Looking at basal area.
+```{r}
+# Load the shapefile
+habitat_basal <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2023/UPDATED_2023_LCOV_MGMT.shp")
+
+# Modify the 'LCDENSITYS' column
+habitat_basal$LCDENSITYS <- gsub("30-60", "med", habitat_basal$LCDENSITYS)
+habitat_basal$LCDENSITYS <- gsub("<30", "low", habitat_basal$LCDENSITYS)
+habitat_basal$LCDENSITYS <- gsub("60-90", "high", habitat_basal$LCDENSITYS)
+habitat_basal$LCDENSITYS <- gsub(">90", "closed", habitat_basal$LCDENSITYS)
+
+# If there are any empty or NA values, replace them with "none"
+habitat_basal$LCDENSITYS[habitat_basal$LCDENSITYS == "" | is.na(habitat_basal$LCDENSITYS)] <- "none"
+
+habitat_basal %>%
+  as.tibble() %>%
+  count(LCOV, LCDENSITYS)
+
+habitat_basal_df <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2023/UPDATED_2023_LCOV_MGMT.shp") %>%
+  as.tibble() %>%
+mutate(LCDENSITYS = case_when(
+    is.na(LCDENSITYS) ~ 0,    # Check for actual NA values
+    LCDENSITYS == "<30" ~ 15,
+    LCDENSITYS == "30-60" ~ 45,
+    LCDENSITYS == "60-90" ~ 75,
+    LCDENSITYS == ">90" ~ 100,
+    TRUE ~ as.numeric(NA)  # This handles any other unexpected values
+  ))
+
+habitat_basal_df <- habitat_basal_df %>%
+  mutate(LCDENSITYS <- as.numeric(LCDENSITYS))
+
+habitat_basal_df_summ <- habitat_basal_df %>%
+  group_by(LCOV) %>%
+  summarize(mean_basal_area <- mean(LCDENSITYS))
+```
+
+```{r}
+#Checking the extent of the bounding box.
+extent(habitat_basal@bbox)
+
+#Creating a column that treats land cover (LCOV_MGMT2) types as a numeric factor.
+habitat_basal$hab.factor <- as.numeric(as.factor(habitat_basal$LCDENSITYS))
+
+#Viewing levels (landc over types aka HABITAT)
+levels(as.factor(habitat_basal$LCDENSITYS))
+
+#Quick look
+#head(habitat)
+
+#Creating template raster. Here, we specify crs, extent, and resolution of our raster. For some reason, model won't run with a resolution below 3 meters. This shouldn't be an issues w telemetry data, as we want a larger raster cell size.
+template.raster <- raster(crs = habitat_basal@proj4string,
+       ext = extent(habitat_basal@bbox),
+       res = 10)
 
 
+#Rasterizing the map of study site, filling with land cover type (as numeric factors). Pretty sure this is unnecessary, as it is handled in our for() loop later.
+habitat.raster <- rasterize(x = habitat,
+                            y = template.raster,
+                            field = habitat_basal$hab.factor)
+
+#plotting habitat raster habitat raster
+plot(habitat.raster)
+#windows()
+
+#Viewing habitat shapefile. Land cover types here are now numeric values.
+plot(habitat, col = as.factor(habitat_basal$LCDENSITYS))
+
+```
+
+Creating our stack of raster layers. This will be used in Summer 2023 RSF for basal area.
+```{r}
+#### Creating raster stack for basal area #### 
+
+#Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
+habitats <- levels(as.factor(habitat_basal$LCDENSITYS))
+
+#Creating a raster list. This will be used in our for loop.
+rasterList <- list()
+
+#Creating our for loop. This creates a distance-based raster layer for each of our seven lcov types.
+#Each raster cell in a given lcov layer will hold the distance to the nearest respective lcov type. This value will be 0 if the cell is within the lcov type. 
+for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
+  # i <- 1 (debugger, leave muted unless needed)
+  #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
+  hab <- subset(habitat_basal, LCDENSITYS == habitats[i])   
+  #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
+  hab$field <- 1 
+  # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
+  #We rasterize hab subset in each stack, based on raster layer. We transfer values from hab$field. Lcov types outside of the respective layer (background) are assigned NA. We calc distance from each cell to nearest respective lcov type, creating a dist-based raster layer.
+  rasterList[[i]] <- distance(rasterize(hab, template.raster, field = hab$field, background = NA))
+  #Creating list of dist-based raster layers, naming each element after corresponding lcov type.
+  names(rasterList)[i] <- habitats[i]
+}
+
+#This extracts the extent of each raster layer in our list.
+lapply(rasterList, extent)
+
+#Now we stack our raster layers.
+distanceStack23_basal <- stack(rasterList)
+
+plot(distanceStack23_basal)
+```
+
+Importing Summer 2023 data. 
+```{r}
+#### Importing Summer 2023 locations #### 
+
+#/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S23locsUnweighted.xlsx
+
+Summer_2023_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S23locsUnweighted.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status == "A") %>%
+  mutate(date = lubridate::as_date(date)) %>%
+  filter(date >= "2023-04-18",
+         date <= "2023-09-30")
+
+#Importing "fate" spreadsheet, which has sex associated with each band number (unlike daily locations data)
+fate <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Fate/fate_all_birds_clean4880EDIT.xlsx", setclass = "tibble") %>%
+  clean_names()
+
+#Adding sex to each real/random location.
+Summer_2023_loc <- Summer_2023_locs %>%
+  left_join(fate %>% 
+  dplyr::select(band_numb, sex), by = "band_numb")
+```
+
+```{r}
+rsfData_summer2023_basal <- Summer_2023_locs %>% 
+  #Converting it to a tibble
+   as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 25) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble (it generated KDE homeranges, UDs and isopleths for each bird).
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+      #Below we generate x random points within each NOBO's KDE home range (95% UD).
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack23_basal)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2023_basal <- rsfData_summer2023_basal  %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(closed:none), .funs = function(x){as.numeric(scale(x, center = T))}) 
+```
+
+```{r}
+#### Combining summer 22/23 data for basal area ####
+rsf_basal_22_23 <- rbind(rsfData_modified_summer2022_basal, rsfData_modified_summer2023_basal)
+```
+
+```{r}
+#### Summer 2022 AND 2023;#### 
+pop.rsf_summer2022_23_basal <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ none + low + med + high + closed + (1|band_numb),
+
+
+  #Specifying our dataset
+  data = rsf_basal_22_23,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  #prior = c(
+    #set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    #set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    #set_prior("normal(0, 2)", class = "sd"),         # Prior for the standard deviation (random effect...band_numb),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+  seed = 123,
+  
+  warmup = 5000,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Saving model results
+saveRDS(pop.rsf_summer2022_23_basal, "/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/model_rsf_22_23_basal.rds")
+```
+
+```{r}
+pop.rsf_summer2022_23_bayes <- readRDS("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/model_rsf_22_23_basal.rds")
+
+
+summary(pop.rsf_summer2022_23_bayes)
+
+# Get the summary of the model
+model_summary_summer2022_23_bayes <- summary(pop.rsf_summer2022_23_bayes)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_23_bayes$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+coefficients_data_no_intercept_2022_2023 <- coefficients_data_no_intercept %>%
+  clean_names()
+
+#writexl::write_xlsx(coefficients_data_no_intercept_2022_2023, "/Volumes/Samsung_T5/ThesisPlots/Ch1/UPDATED_betasLCOV22_23.xlsx")
+
+#plotting beta coefficients and confidence levels
+coefficients_data_no_intercept_2022_2023 %>%
+  ggplot(aes(x = reorder(variable, -estimate), y = estimate)) +
+  geom_point() + 
+  geom_errorbar(aes(ymin = l_95_percent_ci, ymax = u_95_percent_ci), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.5) +  
+  coord_flip() +  
+  labs(x = "Covariate",
+       y = "Estimated posterior beta coefficient") +
+  scale_y_continuous(limits = c(-0.25, 0.25)) +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
+
+coefficients_data_no_intercept_2022_2023 %>%
+  ggplot(aes(x = reorder(variable, -estimate), y = odds_ratio)) +
+  geom_point() +
+  coord_flip() +  
+  labs(x = "Land Cover",
+       y = "Odds Ratio") +
+  theme_bw()
+  
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.5) +  
+  coord_flip() +  
+  labs(x = "Land Cover",
+       y = "Beta Coefficient") +
+  scale_y_continuous(limits = c(-0.2, 0.2)) +
+  theme_bw() +
+  theme(element_text("Times New Roman"))
+
+
+
+# For the trace plots
+mcmc_trace(pop.rsf_summer2022_23_bayes, 
+           pars = c("b_Intercept", "b_none", "b_low", "b_med", "b_high", "b_closed"),
+           n_warmup = 5000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate") +
+  theme_bw()
+
+# Get the posterior samples as a data frame (posterior package deprecated)...
+posterior_draws <- as_draws_df(pop.rsf_summer2022_23_bayes)
+
+
+#Selecting columns we want to plot, renaming
+posterior_draws <- posterior_draws %>%
+  as_tibble() %>%
+  dplyr::select(starts_with("b_"), -b_Intercept) %>%
+  rename(none = b_none,
+         low = b_low,
+         med = b_med,
+         high = b_high,
+         closed = b_closed)
+
+# Pivoting long, so we can facet wrap by land cover type
+posterior_draws_long <- posterior_draws %>%
+  pivot_longer(cols = none:closed, names_to = "basal_area", values_to = "value")
+
+# plotting density of posterior draws
+posterior_draws_long %>%
+  ggplot(aes(x = value, fill = basal_area)) +
+  geom_density(alpha = 0.8, position = "jitter") +
+  facet_wrap(~factor(basal_area, levels = c("low", "none", "med", "high", "closed")), ncol = 3) +
+  theme_minimal() +
+  labs(x = "Distribution of posterior beta coefficient estimates",
+      y = "Density") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+   theme_bw() +
+  theme(legend.position = "none") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12)) +
+    scale_x_continuous(breaks = c(-0.15, 0, 0.15)) 
+
+  
+ 
+#### Probability of direction ####
+p_direction(x = pop.rsf_summer2022_23_bayes)
+```
