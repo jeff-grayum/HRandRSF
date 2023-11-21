@@ -1848,6 +1848,15 @@ habitat_basal_df <- habitat_basal_df %>%
 habitat_basal_df_summ <- habitat_basal_df %>%
   group_by(LCOV) %>%
   summarize(mean_basal_area <- mean(LCDENSITYS))
+
+habitat_basal_df %>%
+  filter(LCOV == "NP") %>%
+  count(LCDENSITYS)
+
+habitat_basal_df %>%
+  filter(LCOV == "NP") %>%
+  group_by(LCDENSITYS) %>%
+  summarize(total_acres = sum(ACRES))
 ```
 
 ```{r}
