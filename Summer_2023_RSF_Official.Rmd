@@ -64,7 +64,9 @@ habitat <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/20
 
 habitat %>%
   as.tibble() %>%
-  view()
+   count(LCOV_MGMT, sort = T)
+
+sum()
   
 #Checking the extent of the bounding box.
 extent(habitat@bbox)
@@ -94,9 +96,7 @@ plot(habitat.raster)
 #windows()
 
 #Viewing habitat shapefile. Land cover types here are now numeric values.
-plot(habitat, col = as.factor(habitat$LCOV_MGMT))
-
-
+plot(habitat, col = as.factor(habitat$LCOV))
 ```
 
 Creating our stack of raster layers. This will be used in Summer 2023 RSF.
@@ -109,7 +109,7 @@ habitats <- levels(as.factor(habitat$LCOV_MGMT))
 #Creating a raster list. This will be used in our for loop.
 rasterList <- list()
 
-#Creating our for loop. This creates a distance-based raster layer for each of our seven lcov types.
+#Creating our for loop. This creates a distance-based raster layer for each of our 12 lcov types.
 #Each raster cell in a given lcov layer will hold the distance to the nearest respective lcov type. This value will be 0 if the cell is within the lcov type. 
 for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
   # i <- 1 (debugger, leave muted unless needed)
@@ -152,11 +152,94 @@ Summer_2023_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1
 fate <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Fate/fate_all_birds_clean4880EDIT.xlsx", setclass = "tibble") %>%
   clean_names()
 
+fate %>% 
+  filter(fate == "Dead") 
+
 #Adding sex to each real/random location.
-Summer_2023_loc <- Summer_2023_locs %>%
+Summer_2023_locs <- Summer_2023_locs %>%
   left_join(fate %>% 
   dplyr::select(band_numb, sex), by = "band_numb")
 ```
+
+How many locations were in each land cover type?
+```{r}
+#### Num/percent of locs in each land cover type ####
+
+#importing map
+habitat23 <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2023/UPDATED_2023_LCOV_MGMT.shp")
+
+# Converting summer_2023_locs to SpatialPointsDataFrame
+coordinates(Summer_2023_locs) <- ~easting + northing 
+
+#Matching coord system with habitat layer
+proj4string(Summer_2023_locs) <- proj4string(habitat23)
+
+# Overlay the bobwhite locations onto the habitat map
+bobwhite_lcov23 <- over(Summer_2023_locs, habitat23)
+
+# Add lcov type to Summer 2023 locs
+Summer_2023_locs$LCOV_MGMT <- bobwhite_lcov23$LCOV_MGMT
+
+# Now summer_2023_locs contains the landcover type each bobwhite was in
+
+# Plotting locations on the habitat map to make sure stuff makes sense
+plot(habitat)
+points(Summer_2023_locs, col = 'red', pch = 20) # change color and point character as needed
+
+Summer_2023_locs <- Summer_2023_locs %>%
+  as.tibble()
+
+OVER_25_LOCS <- Summer_2023_locs %>%
+  count(band_numb, sort = TRUE) %>%
+  dplyr::filter(n >= 25) %>%
+  dplyr::pull(band_numb)
+
+
+#Filtering for birds with 25> locs
+Summer_2023_locs25 <- Summer_2023_locs %>%
+  dplyr::filter(band_numb %in% OVER_25_LOCS) 
+
+Summer_2023_locs25LCOV <- Summer_2023_locs %>%
+  select(LCOV_MGMT)
+
+#Combining with summer 2022 lcov
+sum22_23lcov <- rbind(Summer_2022_locs25LCOV, Summer_2023_locs25LCOV)
+
+#Making tibble of number of lcov locs
+LCOV_SUM <- sum22_23lcov %>%
+  count(LCOV_MGMT, sort = TRUE)
+
+LCOV_SUM$percentLOCS <- ((LCOV_SUM$n / 4036) * 100)
+
+#Counting 2023 lcov acres
+#Let's count the land cover types.
+lcov_sums23 <- habitat23 %>%
+  as.data.frame() %>%
+  group_by(LCOV_MGMT) %>%
+  summarize(sum_acres23 = sum(ACRES))
+
+lcov_sums22_23 <- cbind(lcov_sums22, lcov_sums23 %>% select(sum_acres23))
+
+
+
+totalacres23 <- habitat23 %>%
+  as.tibble () 
+
+totalacres23 <- sum(totalacres23$ACRES)
+
+
+totalacres <- sum(totalacres22 + totalacres23)
+
+lcov_percent <- lcov_sums22_23 %>%
+  group_by(LCOV_MGMT) %>%
+  summarize(percentLCOV = ((sum_acres22 + sum_acres23) / totalacres) * 100)
+
+percLocsLCOV <- lcov_percent %>%
+  inner_join(LCOV_SUM %>% select(LCOV_MGMT, percentLOCS), by = "LCOV_MGMT") %>%
+  arrange(-percentLCOV)
+
+```
+
 
 ```{r}
 
@@ -385,7 +468,7 @@ ggplot(posterior_draws_long, aes(x = value, fill = landcover)) +
 Summer 2022 AND 2023 Bayesian RSF: Looking at all age and sex classes
 ```{r}
 #### Summer 2022 AND 2023;#### 
-#pop.rsf_summer2022_23_bayes <- brm(
+pop.rsf_summer2022_23_bayes <- brm(
   
   #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
   case | trials(1) ~ AG + UM + NP_UB + NP_BU + NP_UB + PP_BU + PP_UB + HW + HP_BU + HP_UB + SS_UB + SS_BU + (1|band_numb),
@@ -485,6 +568,34 @@ coefficients_data_no_intercept_2022_2023 %>%
         legend.text = element_text(colour="black",size=12),
         axis.text.y = element_text(colour="black",size=12))
 
+library(ggplot2)
+
+coefficients_data_no_intercept_2022_2023 %>%
+  ggplot(aes(x = reorder(variable, -estimate), y = estimate)) +
+  geom_point() + 
+  geom_errorbar(aes(ymin = l_95_percent_ci, ymax = u_95_percent_ci), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.5) +  
+  coord_flip() +  
+  labs(x = "Covariate",
+       y = "Estimated posterior beta coefficient") +
+  scale_y_continuous(limits = c(-0.25, 0.25)) +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.title.y = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.title.x = element_text(colour="black", size=12, family="Times New Roman"),
+        legend.title = element_text(colour="black", size=12, family="Times New Roman"),
+        legend.text = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.text.y = element_text(colour="black", size=12, family="Times New Roman"),
+        plot.title = element_text(size=14, family="Times New Roman"),
+        plot.subtitle = element_text(size=12, family="Times New Roman"),
+        plot.caption = element_text(size=10, family="Times New Roman"))
+
+
 coefficients_data_no_intercept_2022_2023 %>%
   ggplot(aes(x = reorder(variable, -estimate), y = odds_ratio)) +
   geom_point() +
@@ -568,6 +679,36 @@ posterior_draws_long %>%
                              "PP_UB" = "#0000FF", "PP_BU" = "#0000FF",  # Blue
                              "HP_UB" = "brown", "HP_BU" = "brown",  # Greenish Brown
                              "UM" = "#000000"))  # Black
+#Same as above, but TNR
+posterior_draws_long %>%
+  ggplot(aes(x = value, fill = landcover)) +
+  geom_density(position = "jitter") +
+  facet_wrap(~factor(landcover, levels = c("NP_BU", "SS_UB", "AG", "HP_UB", "PP_UB", "PP_BU", "UM", "SS_BU", "NP_UB", "HW", "HP_BU")), ncol = 4) +
+  theme_minimal() +
+  labs(x = "Distribution of posterior beta coefficient estimates",
+       y = "Density") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.title.y = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.title.x = element_text(colour="black", size=12, family="Times New Roman"),
+        legend.title = element_text(colour="black", size=12, family="Times New Roman"),
+        legend.text = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.text.y = element_text(colour="black", size=12, family="Times New Roman"),
+        strip.text = element_text(colour="black", size=12, family="Times New Roman")) +
+  scale_x_continuous(breaks = c(-0.2, 0, 0.2)) +
+  scale_fill_manual(values = c("AG" = "#FFFF00",  # Yellow
+                               "NP_BU" = "#006400", "NP_UB" = "#006400",  # Forest Green
+                               "HW" = "#422305",  # Dark Brown
+                               "SS_UB" = "#808080", "SS_BU" = "#808080",  # Gray
+                               "PP_UB" = "#0000FF", "PP_BU" = "#0000FF",  # Blue
+                               "HP_UB" = "brown", "HP_BU" = "brown",  # Greenish Brown
+                               "UM" = "#000000"))  # Black
 
   
  
@@ -1097,25 +1238,25 @@ coefficients_data_no_intercept_allBU_UB <- coefficients_data %>%
 
 writexl::write_xlsx(coefficients_data_no_intercept_allBU_UB, "/Users/jeffgrayum/Downloads/UPDATED_all_bu_ubFixed.xlsx")
 
+coefficients_data_no_intercept_allBU_UB <- read_xlsx("/Users/jeffgrayum/Downloads/UPDATED_all_bu_ubFixed.xlsx")
 
 #Renaming 
 coefficients_data_no_intercept_allBU_UB <- coefficients_data_no_intercept_allBU_UB %>%
   mutate(variable = case_when(
-    variable == "bu" ~ "BU",
-    variable == "ub" ~ "UB",
-    variable == "n_b" ~ "NB",
-    TRUE ~ variable  # This keeps all other values as they are
+    variable == "bu" ~ "<1Year",
+    variable == "ub" ~ "1-2Years",
+    variable == "n_b" ~ "NB"
   ))
 
 
 # Filter out the intercept and plot
 coefficients_data_no_intercept_allBU_UB %>%
-  ggplot(aes(x = reorder(variable, -estimate), y = estimate)) +
+  ggplot(aes(x = reorder('Time since fire', -β), y = β)) +
   geom_point() + 
   geom_errorbar(aes(ymin = l_95_percent_ci, ymax = u_95_percent_ci), width = 0.2) + 
   geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.5) +  
   coord_flip() +  
-  labs(x = "Treatment",
+  labs(x = "Time since fire",
        y = "Estimated posterior beta coefficient") +
   theme_bw() +
    theme(panel.grid.major=element_blank(),
@@ -1129,6 +1270,30 @@ coefficients_data_no_intercept_allBU_UB %>%
         legend.title = element_text(colour="black",size=12),
         legend.text = element_text(colour="black",size=12),
         axis.text.y = element_text(colour="black",size=12))
+
+library(ggplot2)
+
+coefficients_data_no_intercept_allBU_UB %>%
+  ggplot(aes(x = reorder(`Time since fire`, -`β`), y = `β`)) +
+  geom_point() + 
+  geom_errorbar(aes(ymin = `Lower 95% Cr.I.`, ymax = `Upper 95% Cr.I.`), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.5) +  
+  coord_flip() +  
+  labs(x = "Time since fire",
+       y = "Estimated posterior beta coefficient") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.title.y = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.title.x = element_text(colour="black", size=12, family="Times New Roman"),
+        legend.title = element_text(colour="black", size=12, family="Times New Roman"),
+        legend.text = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.text.y = element_text(colour="black", size=12, family="Times New Roman"),
+        text = element_text(family = "Times New Roman"))  # Set global text elements to Times New Roman
+
 
 
 
@@ -1149,35 +1314,41 @@ posterior_draws_buub <- as_draws_df(rsf22_23_bayes_burned_unburned)
 posterior_draws <- posterior_draws_buub %>%
   as_tibble() %>%
   dplyr::select(starts_with("b_"), -b_Intercept) %>%
-  rename(BU = b_bu,
-         UB = b_ub,
+  rename("<1 Year" = b_bu,
+         "1-2 Years" = b_ub,
          NB = b_n_b)
          
 # Pivoting long, so we can facet wrap by land cover type
 posterior_draws_long <- posterior_draws %>%
-  pivot_longer(cols = BU:UB, names_to = "landcover", values_to = "value")
+  pivot_longer(cols = `<1 Year`:`1-2 Years`, names_to = "treatment", values_to = "value")
 
 # plotting density of posterior draws
+library(ggplot2)
+library(dplyr)
+
 posterior_draws_long %>%
-  ggplot(aes(x = value, fill = landcover)) +
+  dplyr::filter(treatment != "NB") %>%
+  ggplot(aes(x = value, fill = treatment)) +
   geom_density(alpha = 0.7) +
-  facet_wrap(~factor(landcover, levels = c("BU", "UB", "NB"))) +
+  facet_wrap(~factor(treatment, levels = c("<1 Year", "1-2 Years"))) +
   xlab("Distribution of posterior beta coefficient estimates") +
   ylab("Density") +
   geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
   theme_bw() +
   theme(legend.position = "none",
-        panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        #panel.background = element_rect(fill = "white"),
-        axis.line=element_line("black"),
-        axis.ticks=element_line("black"),
-        axis.text.x = element_text(colour="black",size=12),
-        axis.title.y=element_text(colour="black",size=12),
-        axis.title.x=element_text(colour="black",size=12),
-        legend.title = element_text(colour="black",size=12),
-        legend.text = element_text(colour="black",size=12),
-        axis.text.y = element_text(colour="black",size=12))
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.title.y = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.title.x = element_text(colour="black", size=12, family="Times New Roman"),
+        legend.title = element_text(colour="black", size=12, family="Times New Roman"),
+        legend.text = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.text.y = element_text(colour="black", size=12, family="Times New Roman"),
+        strip.text = element_text(colour="black", size=12, family="Times New Roman"),
+        text = element_text(family = "Times New Roman"))  # Set global text elements to Times New Roman
+
  
 
 #### Probability of direction ####
@@ -1396,6 +1567,109 @@ hw_pred_draws_sum%>%
    labs(x = "Distance to HW (centered and scaled)", 
        y = "Probability of selection")
 
+#HP_BU
+hp_bu_values <- seq(min(rsf_modified_2022_23$HP_BU, na.rm = TRUE), 
+                 max(rsf_modified_2022_23$HP_BU, na.rm = TRUE), 
+                 length.out = 1000)
+
+hp_bu_df <- data.frame(
+  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(hp_bu_values)),
+  AG = rep(mean(rsf_modified_2022_23$AG), length(hp_bu_values)),
+  HP_BU = hp_bu_values,
+  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(hp_bu_values)),
+  HW = rep(mean(rsf_modified_2022_23$HW), length(hp_bu_values)),
+  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(hp_bu_values)),
+  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(hp_bu_values)),
+  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(hp_bu_values)),
+  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(hp_bu_values)),
+  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(hp_bu_values)),
+  UM = rep(mean(rsf_modified_2022_23$UM), length(hp_bu_values)),
+  band_numb = sample(rsf_modified_2022_23$band_numb, size = length(hp_bu_values), replace = TRUE)
+)
+
+
+hp_bu_pred_draws <- epred_draws(newdata = hp_bu_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(1|band_numb))
+
+hp_bu_pred_draws_sum <- hp_bu_pred_draws %>%
+  group_by(HP_BU) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+summary(hp_bu_pred_draws)
+
+hp_bu_pred_draws_sum%>% 
+  ggplot(aes(HP_BU, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "brown", alpha = 0.4) +
+  labs(x = "Distance to HP_BU (centered and scaled)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
+
+
+#NP_UU
+np_ub_values <- seq(min(rsf_modified_2022_23$NP_UB, na.rm = TRUE), 
+                 max(rsf_modified_2022_23$NP_UB, na.rm = TRUE), 
+                 length.out = 1000)
+
+np_ub_df <- data.frame(
+  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(np_ub_values)),
+  AG = rep(mean(rsf_modified_2022_23$AG), length(np_ub_values)),
+  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(np_ub_values)),
+  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(np_ub_values)),
+  HW = rep(mean(rsf_modified_2022_23$HW), length(np_ub_values)),
+  NP_UB = np_ub_values,
+  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(np_ub_values)),
+  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(np_ub_values)),
+  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(np_ub_values)),
+  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(np_ub_values)),
+  UM = rep(mean(rsf_modified_2022_23$UM), length(np_ub_values)),
+  band_numb = sample(rsf_modified_2022_23$band_numb, size = length(np_ub_values), replace = TRUE)
+)
+
+
+np_ub_pred_draws <- epred_draws(newdata = np_ub_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(1|band_numb))
+
+np_ub_pred_draws_sum <- np_ub_pred_draws %>%
+  group_by(NP_UB) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+summary(np_ub_pred_draws)
+
+np_ub_pred_draws_sum%>% 
+  ggplot(aes(NP_UB, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "#006400", alpha = 0.4) +
+  labs(x = "Distance to NP_UB (centered and scaled)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
+
+
+
 
 #Making one facet-wrapped plot
 #First, we must pivot longer.
@@ -1411,8 +1685,14 @@ ss_ub_pred_draws_sum_piv <- ss_ub_pred_draws_sum %>%
 hw_pred_draws_sum_piv <- hw_pred_draws_sum %>%
   pivot_longer(HW, names_to = "Covariate", values_to = "value")
 
+hp_bu_pred_draws_sum_piv <- hp_bu_pred_draws_sum %>%
+  pivot_longer(HP_BU, names_to = "Covariate", values_to = "value")
+
+np_ub_pred_draws_sum_piv <- np_ub_pred_draws_sum %>%
+  pivot_longer(NP_UB, names_to = "Covariate", values_to = "value")
+
 #Now, we bind together.
-all_covs_pred <- rbind(np_bu_pred_draws_sum_piv, ag_pred_draws_sum_piv, ss_ub_pred_draws_sum_piv, hw_pred_draws_sum_piv)
+all_covs_pred <- rbind(np_bu_pred_draws_sum_piv, ag_pred_draws_sum_piv, ss_ub_pred_draws_sum_piv, hw_pred_draws_sum_piv, hp_bu_pred_draws_sum_piv, np_ub_pred_draws_sum_piv)
 
 
 # Re-ordering the legend for a non-facet_wrapped plot
@@ -1430,15 +1710,15 @@ all_covs_pred %>%
   theme_bw()
 
 # Re-ordering the legend for a facet_wrapped plot
-all_covs_pred$Covariate <- fct_relevel(all_covs_pred$Covariate, "NP_BU","SS_UB", "AG", "HW")
+all_covs_pred$Covariate <- fct_relevel(all_covs_pred$Covariate, "NP_BU","SS_UB", "AG", "NP_UB", "HW", "HP_BU")
 
 #Making a non-facet-wrapped plot
 all_covs_pred %>%
   ggplot(aes(value, mean_fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci, fill = Covariate), alpha = 0.6) +
-  scale_color_manual(values = c("HW" = "#422305", "SS_UB" = "gray50", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
-  scale_fill_manual(values = c("HW" = "#422305", "SS_UB" = "gray50", "AG" = "#F0E68C", "NP_BU" = "#006400")) +
+  scale_color_manual(values = c("HW" = "#422305", "SS_UB" = "gray50", "AG" = "#F0E68C", "NP_BU" = "#006400", "NP_UB" = "#006400", "HP_BU" = "brown")) +
+  scale_fill_manual(values = c("HW" = "#422305", "SS_UB" = "gray50", "AG" = "#F0E68C", "NP_BU" = "#006400", "NP_UB" = "#006400", "HP_BU" = "brown")) +
   labs(x = "Distance to covariate (centered and scaled)", 
        y = "Probability of selection") +
   facet_wrap(~ Covariate, scales = "free_x") +
@@ -1455,6 +1735,35 @@ all_covs_pred %>%
         legend.title = element_text(colour="black",size=12),
         legend.text = element_text(colour="black",size=12),
         axis.text.y = element_text(colour="black",size=12)) 
+
+library(ggplot2)
+
+all_covs_pred %>%
+  ggplot(aes(value, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci, fill = Covariate), alpha = 0.6) +
+  scale_color_manual(values = c("HW" = "#422305", "SS_UB" = "gray50", "AG" = "#F0E68C", "NP_BU" = "#006400", "NP_UB" = "#006400", "HP_BU" = "brown")) +
+  scale_fill_manual(values = c("HW" = "#422305", "SS_UB" = "gray50", "AG" = "#F0E68C", "NP_BU" = "#006400", "NP_UB" = "#006400", "HP_BU" = "brown")) +
+  labs(x = "Distance to covariate (centered and scaled)", 
+       y = "Probability of selection") +
+  facet_wrap(~ Covariate, scales = "free_x") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        strip.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        plot.title = element_text(size = 14, family = "Times New Roman"),
+        plot.subtitle = element_text(size = 12, family = "Times New Roman"),
+        plot.caption = element_text(size = 10, family = "Times New Roman"))
+
 ```
 
 ```{r}
