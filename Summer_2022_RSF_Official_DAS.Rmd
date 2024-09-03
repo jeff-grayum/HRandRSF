@@ -1,0 +1,1845 @@
+---
+title: "EDA_RSF_Fresh"
+output: html_document
+date: "2023-09-08"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#### Libraries #### 
+library(raster)
+library(amt)
+library(dplyr)
+library(tibble)
+library(purrr)
+library(tidyr)
+library(lme4)
+library(lmerTest)
+library(janitor)
+library(rio)
+library(stringr)
+library(MuMIn)
+library(tidyverse)
+library(bayesplot)
+library(ggeffects)
+library(ggplot2)
+library(brms)
+```
+
+Importing map of study site, setting template for raster stack.
+```{r}
+##### Importing map of study site as a shape file #### 
+
+habitat <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2022_FL_RC/_2022_WFP_FL_Final.shp")
+
+#Let's count the land cover types.
+habitat %>%
+ as.data.frame() %>% 
+ count(LMP2)
+
+
+#Checking the extent of the bounding box.
+extent(habitat@bbox)
+
+#Creating a column that treats land cover (LCOV_MGMT2) types as a numeric factor.
+habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT))
+
+#Viewing levels (landc over types aka HABITAT)
+levels(as.factor(habitat$LMP2))
+
+#Quick look
+#head(habitat)
+
+#Creating template raster. Here, we specify crs, extent, and resolution of our raster. For some reason, model won't run with a resolution below 3 meters. This shouldn't be an issues w telemetry data, as we want a larger raster cell size.
+template.raster <- raster(crs = habitat@proj4string,
+       ext = extent(habitat@bbox),
+       res = 10)
+
+
+#Rasterizing the map of study site, filling with land cover type (as numeric factors). Pretty sure this is unnecessary, as it is handled in our for() loop later.
+habitat.raster <- rasterize(x = habitat,
+                            y = template.raster,
+                            field = habitat$hab.factor)
+
+#plotting habitat raster habitat raster
+plot(habitat.raster)
+#windows()
+
+#Viewing habitat shapefile. Land cover types here are now numeric values.
+plot(habitat, col = as.factor(habitat$LCOV))
+```
+
+Creating our stack of raster layers for summer 2022 RSF
+```{r}
+#### Creating raster stack #### 
+
+#Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
+habitats <- levels(as.factor(habitat$LMP2))
+
+#Creating a raster list. This will be used in our for loop.
+rasterList <- list()
+
+#Creating our for loop. This creates a distance-based raster layer for each of our seven lcov types.
+#Each raster cell in a given lcov layer will hold the distance to the nearest respective lcov type. This value will be 0 if the cell is within the lcov type. 
+for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
+  # i <- 1 (debugger, leave muted unless needed)
+  #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
+  hab <- subset(habitat, LMP2 == habitats[i])   
+  #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
+  hab$field <- 1 
+  # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
+  #We rasterize hab subset in each stack, based on raster layer. We transfer values from hab$field. Lcov types outside of the respective layer (background) are assigned NA. We calc distance from each cell to nearest respective lcov type, creating a dist-based raster layer.
+  rasterList[[i]] <- distance(rasterize(hab, template.raster, field = hab$field, background = NA))
+  #Creating list of dist-based raster layers, naming each element after corresponding lcov type.
+  names(rasterList)[i] <- habitats[i]
+}
+
+#This extracts the extent of each raster layer in our list.
+lapply(rasterList, extent)
+
+#Now we stack our raster layers.
+distanceStack22 <- stack(rasterList)
+
+#Plotting our seven distance-based raster layers.
+plot(distanceStack22)
+```
+
+Importing Summer 2022 data. 
+```{r}
+#### Importing summer locations #### 
+
+#Data set with 1 loc per day, 3 per week.
+#"/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S22locsUnweightedv2.xlsx"
+
+Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S22locsUnweightedv2.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status != "D",
+         status != "N") %>%
+  mutate(date = lubridate::as_date(date)) %>%
+  filter(date > "2022-04-11")
+
+#Importing "fate" spreadsheet, which has sex and age-class associated with each band number (unlike daily locations data)
+fate <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Fate/fate_clean_2021_22.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  rename(band_numb = band_number)
+
+#Adding sex to each observation/random location.
+Summer_2022_locs <- Summer_2022_locs %>%
+  left_join(fate %>% 
+              dplyr::select(band_numb, sex), by = "band_numb")
+
+#Isolation 2022 females
+Summer_2022_locs_female <- Summer_2022_locs %>%
+  dplyr::filter(sex %in% "F")
+
+#Isolation 2022 males
+Summer_2022_locs_male <- Summer_2022_locs %>%
+  dplyr::filter(sex %in% "M")
+```
+
+```{r}
+#### Num/percent of locs in each land cover type ####
+
+#Importing map
+#amount of each land cover type in 2022
+habitat22 <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2022/UPDATED_2022_LCOV_MGMT.shp")
+
+
+# Converting summer_2022_locs to SpatialPointsDataFrame
+coordinates(Summer_2022_locs) <- ~easting + northing 
+
+#Matching coord system with habitat layer
+proj4string(Summer_2022_locs) <- proj4string(habitat22)
+
+# Overlay locations onto the habitat map
+bobwhite_lcov22 <- over(Summer_2022_locs, habitat22)
+
+# Add lcov type to Summer 2022 locs
+Summer_2022_locs$LCOV_MGMT <- bobwhite_lcov22$LCOV_MGMT
+
+# Now summer_2022_locs contains the landcover type each bobwhite was in
+
+# Plotting locations on the habitat map to make sure stuff makes sense
+plot(habitat)
+points(Summer_2022_locs, col = 'red', pch = 20) # change color and point character as needed
+
+#Filtering for birds with 25+ locs
+Summer_2022_locs <- Summer_2022_locs %>%
+  as.tibble() 
+
+
+OVER_25_LOCS22 <- Summer_2022_locs %>%
+  count(band_numb, sort = TRUE) %>%
+  dplyr::filter(n >= 25) %>%
+  dplyr::pull(band_numb)
+
+Summer_2022_locs25 <- Summer_2022_locs %>%
+  dplyr::filter(band_numb %in% OVER_25_LOCS22) 
+
+#Making list of lcov type of birds, only using birds w 25 locs
+Summer_2022_locs25LCOV <- Summer_2022_locs %>%
+  select(LCOV_MGMT)
+
+#Making tibble of number of lcov 
+LCOV_SUM22 <- Summer_2022_locs25LCOV %>%
+  count(LCOV_MGMT, sort = TRUE)
+
+#amount of each land cover type in 2022
+habitat22 <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2022/UPDATED_2022_LCOV_MGMT.shp")
+
+#Let's count the land cover types.
+lcov_sums22 <- habitat22 %>%
+  as.data.frame() %>%
+  group_by(LCOV_MGMT) %>%
+  summarize(sum_acres22 = sum(ACRES))
+
+totalacres22 <- habitat22 %>%
+  as.tibble () 
+
+totalacres22 <- sum(totalacres22$ACRES)
+
+```
+
+
+Creating tibbles for RSF
+```{r}
+#### Creating Summer 2022 tibbles for RSFs, all birds ####
+
+#Creating tibble for RSF, includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
+rsfData_summer2022 <- Summer_2022_locs %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 25) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+
+      #Below we generate x random points within each NOBO's KDE home range.
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack22)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+
+
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2022 <- rsfData_summer2022 %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+#Creating a non centered/scaled version so we can backtransform the x-axis in our predict plots.
+rsfData_summer22_UCS <- rsfData_summer2022 %>% 
+  mutate(case = ifelse(case_ == T, 1, 0))
+
+
+#### Creating summer 2022 tibble for females ####
+
+rsfData_summer2022_female <- Summer_2022_locs_female %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 25) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+
+      #Below we generate x random points within each NOBO's KDE home range.
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack22)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+
+
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2022_female <- rsfData_summer2022_female %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+#### Creating summer 2022 tibble for males ####
+
+rsfData_summer2022_male <- Summer_2022_locs_male %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 25) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+
+      #Below we generate x random points within each NOBO's KDE home range.
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack22)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2022_male <- rsfData_summer2022_male %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
+```
+```
+
+
+```{r}
+##### Summer 2022  Bayesian: Looking at all age and sex classes. #### 
+
+pop.rsf_summer2022_bayes <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + FL + UM + NP_UB + NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU + WFP_FF + (1|band_numb),
+
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes)
+
+# Get the summary of the model
+model_summary_summer2022_bayes <- summary(pop.rsf_summer2022_bayes)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept_22 <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+coefficients_data_no_intercept_22$year <- "2022"
+
+
+# Filter out the intercept and plot
+coefficients_data_no_intercept %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('2022: Beta coefficients') +
+  theme_minimal()
+
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes, 
+           pars = c("b_Intercept", "b_AG", "b_UM", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW", "b_HP_BU", "b_HP_UB", "b_SS_UB", "b_SS_BU"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("All ages and sexes 2022: Trace Plot")
+
+```
+
+Isolating males, Bayesian
+```{r}
+#### Isolating males, Bayesian ####
+pop.rsf_summer2022_bayes_males <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU + (1|band_numb),
+
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022_males,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes_males)
+
+# Get the summary of the model
+model_summary_summer2022_bayes_males <- summary(pop.rsf_summer2022_bayes_males)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes_males$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+# Filter out the intercept and plot
+coefficients_data_no_intercept %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('Males 2022: Beta coefficients') +
+  theme_minimal()
+
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes, 
+           pars = c("b_Intercept", "b_AG", "b_UM", "b_WL", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW", "b_HP_BU", "b_HP_UB", "b_SS_UB", "b_SS_BU"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate") +
+  ggtitle("Males 2022: Trace Plot")
+
+```
+
+Isolating females, bayesian
+```{r}
+#### Isolating males, Bayesian ####
+
+
+pop.rsf_summer2022_bayes_females <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ AG + UM + WL + NP_UB +NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU + (1|band_numb),
+
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022_females,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes_females)
+
+# Get the summary of the model
+model_summary_summer2022_bayes_females <- summary(pop.rsf_summer2022_bayes_females)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes_females$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+# Filter out the intercept and plot
+coefficients_data_no_intercept %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('Females 2022: Beta coefficients') +
+  theme_minimal()
+
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes, 
+           pars = c("b_Intercept", "b_AG", "b_UM", "b_WL", "b_NP_UB", "b_NP_BU", "b_PP_UB", "b_PP_BU", "b_HW", "b_HP_BU", "b_HP_UB", "b_SS_UB", "b_SS_BU"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate (females)") +
+  ggtitle("Females 2022: Trace plots")
+```
+
+Burned/unburned/never burned
+```{r}
+##### Looking at burned/unburned/neverburned #### 
+
+habitat <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2022/UPDATED_2022_LCOV_MGMT.shp")
+
+habitat$LCOV_MGMT <- gsub("AG", "n_b", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("WL", "n_b", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("UM", "n_b", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HW", "n_b", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("NP_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("PP_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HW_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("SS_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HP_UB", "ub", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("NP_BU", "bu", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("PP_BU", "bu", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HW_BU", "bu", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("SS_BU", "bu", habitat$LCOV_MGMT)
+habitat$LCOV_MGMT <- gsub("HP_BU", "bu", habitat$LCOV_MGMT)
+
+
+
+#Let's count the land cover types.
+habitat %>%
+  as.data.frame() %>%
+  count(LCOV_MGMT, sort = T) %>%
+  print()
+
+
+#Checking the extent of the bounding box.
+extent(habitat@bbox)
+
+#Creating a column that treats land cover (LCOV_MGMT2) types as a numeric factor.
+habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT))
+
+#Viewing levels (landc over types aka HABITAT)
+levels(as.factor(habitat$LCOV_MGMT))
+
+#Quick look
+#head(habitat)
+
+#Creating template raster. Here, we specify crs, extent, and resolution of our raster. For some reason, model won't run with a resolution below 3 meters. This shouldn't be an issues w telemetry data, as we want a larger raster cell size.
+template.raster <- raster(crs = habitat@proj4string,
+       ext = extent(habitat@bbox),
+       res = 10)
+
+
+#Rasterizing the map of study site, filling with land cover type (as numeric factors). Pretty sure this is unnecessary, as it is handled in our for() loop later.
+habitat.raster <- rasterize(x = habitat,
+                            y = template.raster,
+                            field = habitat$hab.factor)
+
+#plotting habitat raster habitat raster
+plot(habitat.raster)
+#windows()
+
+#Viewing habitat shapefile. Land cover types here are now numeric values.
+plot(habitat, col = as.factor(habitat$LCOV_MGMT))
+```
+
+```{r}
+#### Creating raster stack for burned/unburned #### 
+
+#Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
+habitats <- levels(as.factor(habitat$LCOV_MGMT))
+
+#Creating a raster list. This will be used in our for loop.
+rasterList <- list()
+
+#Creating our for loop. This creates a distance-based raster layer for each of our seven lcov types.
+#Each raster cell in a given lcov layer will hold the distance to the nearest respective lcov type. This value will be 0 if the cell is within the lcov type. 
+for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
+  # i <- 1 (debugger, leave muted unless needed)
+  #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
+  hab <- subset(habitat, LCOV_MGMT == habitats[i])   
+  #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
+  hab$field <- 1 
+  # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
+  #We rasterize hab subset in each stack, based on raster layer. We transfer values from hab$field. Lcov types outside of the respective layer (background) are assigned NA. We calc distance from each cell to nearest respective lcov type, creating a dist-based raster layer.
+  rasterList[[i]] <- distance(rasterize(hab, template.raster, field = hab$field, background = NA))
+  #Creating list of dist-based raster layers, naming each element after corresponding lcov type.
+  names(rasterList)[i] <- habitats[i]
+}
+
+#This extracts the extent of each raster layer in our list.
+lapply(rasterList, extent)
+
+#Now we stack our raster layers.
+distanceStack22bu <- stack(rasterList)
+
+#Plotting our seven distance-based raster layers.
+plot(distanceStack22bu)
+```
+
+```{r}
+Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S22locsUnweightedv2.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status != "D") %>%
+  mutate(date = lubridate::as_date(date)) %>%
+  filter(date > "2022-04-12",
+         date < "2022-08-06")
+
+```
+
+```{r}
+#### Creating summer 2022 rsf tibble for burned/unburned ####
+#Creating tibble for RSF, which includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
+rsfData_summer2022_burned_unburned <- Summer_2022_locs %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 25) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble (it generated KDE homeranges, UDs and isopleths for each bird).
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+      #Below we generate x random points within each NOBO's KDE home range (95% UD).
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack22bu)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2022_burned_unburned <- rsfData_summer2022_burned_unburned  %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(bu:ub), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+#### running bayes linear regression rsf ####
+pop.rsf_summer2022_bayes_burned_unburned <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ bu + n_b + ub + (1|band_numb),
+
+
+  #Specifying our dataset
+  data = rsfData_modified_summer2022_burned_unburned,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_bayes_burned_unburned)
+
+# Get the summary of the model
+model_summary_summer2022_bayes_burned_unburned <- summary(pop.rsf_summer2022_bayes_burned_unburned)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_bayes_burned_unburned$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+# Filter out the intercept and plot
+coefficients_data_no_intercept %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('Beta coefficients: burned and unburned areas 2022') +
+  theme_minimal()
+
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes_burned_unburned, 
+           pars = c("b_Intercept", "b_unburned", "b_burned"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate (Burned vs Unburned)")
+
+
+```
+
+Lets look at first month following a fire, Summer 2022
+```{r}
+##### Only looking for first month after fire, Summer 2022 #### 
+
+habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2022_LCov_BurnStatus/2022_LCOV_MGMT/2022_LCOV_BurnStatus_V2.shp")
+
+habitat$LCOV_MGMT2 <- gsub("AG", "never_burned", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT2 <- gsub("WL", "never_burned", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT2 <- gsub("UM", "never_burned", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT2 <- gsub("HW", "Never_bburned", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT2 <- gsub("NP_UB", "unburned", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT2 <- gsub("PP_UB", "unburned", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT2 <- gsub("HP_UB", "unburned", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT2 <- gsub("SS_UB", "unburned", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT2 <- gsub("NP_BU", "burned", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT2 <- gsub("PP_BU", "burned", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT2 <- gsub("HP_BU", "burned", habitat$LCOV_MGMT2)
+habitat$LCOV_MGMT2 <- gsub("SS_BU", "burned", habitat$LCOV_MGMT2)
+
+
+
+
+#Let's count the land cover types.
+habitat %>%
+  as.data.frame() %>%
+  count(LCOV_MGMT2, sort = T) %>%
+  print()
+
+
+#Checking the extent of the bounding box.
+extent(habitat@bbox)
+
+#Creating a column that treats land cover (LCOV_MGMT2) types as a numeric factor.
+habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT2))
+
+#Viewing levels (landc over types aka HABITAT)
+levels(as.factor(habitat$LCOV_MGMT2))
+
+#Quick look
+#head(habitat)
+
+#Creating template raster. Here, we specify crs, extent, and resolution of our raster. For some reason, model won't run with a resolution below 3 meters. This shouldn't be an issues w telemetry data, as we want a larger raster cell size.
+template.raster <- raster(crs = habitat@proj4string,
+       ext = extent(habitat@bbox),
+       res = 10)
+
+
+#Rasterizing the map of study site, filling with land cover type (as numeric factors). Pretty sure this is unnecessary, as it is handled in our for() loop later.
+habitat.raster <- rasterize(x = habitat,
+                            y = template.raster,
+                            field = habitat$hab.factor)
+
+#plotting habitat raster habitat raster
+plot(habitat.raster)
+#windows()
+
+#Viewing habitat shapefile. Land cover types here are now numeric values.
+plot(habitat, col = as.factor(habitat$LCOV_MGMT2))
+```
+
+```{r}
+#### Creating raster stack #### 
+
+#Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
+habitats <- levels(as.factor(habitat$LCOV_MGMT2))
+
+#Creating a raster list. This will be used in our for loop.
+rasterList <- list()
+
+#Creating our for loop. This creates a distance-based raster layer for each of our seven lcov types.
+#Each raster cell in a given lcov layer will hold the distance to the nearest respective lcov type. This value will be 0 if the cell is within the lcov type. 
+for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
+  # i <- 1 (debugger, leave muted unless needed)
+  #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
+  hab <- subset(habitat, LCOV_MGMT2 == habitats[i])   
+  #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
+  hab$field <- 1 
+  # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
+  #We rasterize hab subset in each stack, based on raster layer. We transfer values from hab$field. Lcov types outside of the respective layer (background) are assigned NA. We calc distance from each cell to nearest respective lcov type, creating a dist-based raster layer.
+  rasterList[[i]] <- distance(rasterize(hab, template.raster, field = hab$field, background = NA))
+  #Creating list of dist-based raster layers, naming each element after corresponding lcov type.
+  names(rasterList)[i] <- habitats[i]
+}
+
+#This extracts the extent of each raster layer in our list.
+lapply(rasterList, extent)
+
+#Now we stack our raster layers.
+distanceStack <- stack(rasterList)
+
+#Plotting our seven distance-based raster layers.
+plot(distanceStack)
+```
+
+```{r}
+Summer_2022_locs_month_after_fire <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/All_Summer_2022_LOCS_CLEAN_NO_Nests.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status != "D") %>%
+  mutate(date = lubridate::as_date(date)) %>%
+  filter(date >= "2022-04-12",
+         date <= "2022-05-12")
+
+
+#Importing "fate" spreadsheet, which has sex and age-class associated with each band number (unlike daily locations data)
+fate <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/fate_clean_2021_22.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  rename(band_numb = band_number)
+
+#Adding sex and age to each observation/recorded location.
+Summer_2022_locs_month_after_fire <- Summer_2022_locs_month_after_fire %>%
+  left_join(fate %>% select(band_numb, age, sex), by = "band_numb")
+
+#Taking a quick look.
+Summer_2022_locs_month_after_fire %>%
+  view()
+```
+
+```{r}
+rsfData_summer2022_one_month <- Summer_2022_locs_month_after_fire %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 10) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble (it generated KDE homeranges, UDs and isopleths for each bird).
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+      #Below we generate x random points within each NOBO's KDE home range (95% UD).
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_one_month <- rsfData_summer2022_one_month %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(burned:unburned), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+pop.rsf_summer2022_one_month <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ burned + unburned + (1|band_numb),
+
+
+  #Specifying our dataset
+  data = rsfData_modified_one_month,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_one_month)
+
+# Get the summary of the model
+model_summary_summer2022_one_month <- summary(pop.rsf_summer2022_one_month)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_one_month$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+# Filter out the intercept and plot
+coefficients_data_no_intercept %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('Beta coefficients: One month after fire') +
+  theme_minimal()
+
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes_burned_unburned, 
+           pars = c("b_Intercept", "b_unburned", "b_burned"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate (Burned vs Unburned... one month)")
+
+```
+
+```{r}
+#### Looking at 2-3 months after the fire ####
+
+Summer_2022_locs_2_3_months_after_fire <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/All_Summer_2022_LOCS_CLEAN_NO_Nests.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status != "D") %>%
+  mutate(date = lubridate::as_date(date)) %>%
+  filter(date >= "2022-05-12",
+         date <= "2022-07-12")
+
+
+#Importing "fate" spreadsheet, which has sex and age-class associated with each band number (unlike daily locations data)
+fate <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/fate_clean_2021_22.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  rename(band_numb = band_number)
+
+#Adding sex and age to each observation/recorded location.
+Summer_2022_locs_2_3_months_after_fire <- Summer_2022_locs_2_3_months_after_fire %>%
+  left_join(fate %>% select(band_numb, age, sex), by = "band_numb")
+
+#Taking a quick look.
+Summer_2022_locs_2_3_months_after_fire %>%
+  view()
+```
+
+```{r}
+rsfData_summer2022_2_3_months <- Summer_2022_locs_2_3_months_after_fire %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 10) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble (it generated KDE homeranges, UDs and isopleths for each bird).
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+      #Below we generate x random points within each NOBO's KDE home range (95% UD).
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_2_3 <- rsfData_summer2022_2_3_months %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(burned:unburned), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+pop.rsf_summer2022_2_3 <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
+  case | trials(1) ~ burned + unburned + (1|band_numb),
+
+
+  #Specifying our dataset
+  data = rsfData_modified_2_3,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer2022_2_3)
+
+# Get the summary of the model
+model_summary_summer2022_2_3 <- summary(pop.rsf_summer2022_2_3)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_summer2022_2_3$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+# Filter out the intercept and plot
+coefficients_data_no_intercept %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('Beta coefficients: two to three months after fire') +
+  theme_minimal()
+
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes_burned_unburned, 
+           pars = c("b_Intercept", "b_unburned", "b_burned"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate (Burned vs Unburned... two to three months)")
+
+```
+
+```{r}
+#### Looking at the final month of burn data ####
+
+Summer_2022_locs_final_month <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/All_Summer_2022_LOCS_CLEAN_NO_Nests.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status != "D") %>%
+  mutate(date = lubridate::as_date(date)) %>%
+  filter(date >= "2022-07-05",
+         date <= "2022-08-05")
+
+
+#Importing "fate" spreadsheet, which has sex and age-class associated with each band number (unlike daily locations data)
+fate <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/fate_clean_2021_22.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  rename(band_numb = band_number)
+
+#Adding sex and age to each observation/recorded location.
+Summer_2022_locs_final_month <- Summer_2022_locs_final_month %>%
+  left_join(fate %>% select(band_numb, age, sex), by = "band_numb")
+
+#Taking a quick look.
+Summer_2022_locs_final_month %>%
+  view()
+```
+
+```{r}
+rsfData_summer2022_final_month <- Summer_2022_locs_final_month %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 10) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble (it generated KDE homeranges, UDs and isopleths for each bird).
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+      #Below we generate x random points within each NOBO's KDE home range (95% UD).
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_final_month <- rsfData_summer2022_final_month%>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(burned:unburned), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+pop.rsf_summer_final_month <- brm(
+  
+  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are burned or unburned, band number  is our random effect.
+  case | trials(1) ~ burned + unburned + (1|band_numb),
+
+
+  #Specifying our dataset
+  data = rsfData_modified_final_month,
+
+  #Specifying a binomial model. 
+  family = "binomial",
+
+  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
+  prior = c(
+    set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
+    set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
+    set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
+  ),
+
+  #Specifying 10000 iterations. A good balance of speed and accuracy.
+  iter = 10000,
+
+  #4 MCMC chains seems to be a common choice for robust modeling.
+  chains = 4,
+  
+   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
+  control = list(adapt_delta = 0.9)
+)
+
+#Printing summary of results.
+summary(pop.rsf_summer_final_month)
+
+# Get the summary of the model
+model_summary_final_month <- summary(pop.rsf_summer_final_month)
+
+
+#Below we calculate our logs odds ratios.
+# Extract the fixed effects (estimates) from the model summary
+fixed_effects <- model_summary_final_month$fixed
+
+# Create a data frame from the fixed effects
+coefficients_data <- as.data.frame(fixed_effects)
+
+# Adding a column for the odds ratios by exponentiating the estimates
+coefficients_data$OddsRatio <- exp(coefficients_data$Estimate)
+
+# Adding columns for the lower and upper limits of the 95% confidence interval for the odds ratios
+coefficients_data$l_95_CI_OR <- exp(coefficients_data$Estimate - 1.96 * coefficients_data$Est.Error)
+coefficients_data$u_95_CI_OR <- exp(coefficients_data$Estimate + 1.96 * coefficients_data$Est.Error)
+
+# Displaying results
+print(coefficients_data)
+
+#Plotting coefficients and confidence intervals
+# Add a new column to store the row names... seems to be the only way to filter out the intercept.
+coefficients_data$Variable <- rownames(coefficients_data)
+
+coefficients_data_no_intercept <- coefficients_data %>%
+  filter(Variable != "Intercept")
+
+# Filter out the intercept and plot
+coefficients_data_no_intercept %>%
+  ggplot(aes(x = reorder(Variable, -Estimate), y = Estimate)) +
+  geom_point() +  # Plot the beta coefficient point estimates
+  geom_errorbar(aes(ymin = Estimate - 1.96 * Est.Error, ymax = Estimate + 1.96 * Est.Error), width = 0.2) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray", linewidth = 0.5) +  
+  coord_flip() +  # Flip the axis for better visibility
+  xlab('Variable') +
+  ylab('Beta Coefficient') +
+  ggtitle('Beta coefficients: final month after fire') +
+  theme_minimal()
+
+
+# For the trace plots
+color_scheme_set("brightblue")
+mcmc_trace(pop.rsf_summer2022_bayes_burned_unburned, 
+           pars = c("b_Intercept", "b_unburned", "b_burned"),
+           n_warmup = 1000,
+           facet_args = list(ncol = 2)) +
+  xlab("Iteration") +
+  ylab("Parameter Estimate (Burned vs Unburned... final month)")
+```
+
+```{r}
+#### Estimating KDE home range size ####
+
+#Making list of birds with 30+ observations
+samp_list_22 <- Summer_2022_locs %>%
+  group_by(band_numb) %>%
+  summarize(n = n()) %>%
+  arrange(n) %>%
+  filter(n > 25) %>%
+  dplyr::select(band_numb) %>%
+  pull(band_numb)
+
+#Filtering spreadsheet; only including birds from samp_list --> "SampleSize_winter_locs" 
+Summer_2022_locs_KDE <- Summer_2022_locs %>%
+  filter(band_numb %in% samp_list_22) %>%
+  droplevels()
+
+
+#Counting obs for each bird. 
+Summer_2022_locs_KDE %>%
+  count(band_numb, sort = TRUE, name = "obs")
+
+
+#Setting projection and CRS to NAD 1983 16N
+prj <- '+init=epsg:26916'
+CRS("+init=epsg:26916")
+
+
+
+#Creating spatial points data frame.
+Summer_2022_locs_KDE_SPDF <- SpatialPointsDataFrame(coordinates(cbind(Summer_2022_locs_KDE$easting, Summer_2022_locs_KDE$northing)), data = Summer_2022_locs_KDE, proj4string = CRS(prj))
+
+Summer_2022_locs_KDE_SPDF %>%
+  str()
+
+#Verifying band_numb is in row 7.
+Summer_2022_locs_KDE_SPDF[,7]
+
+#Creating KDE HRs
+kde_hr_sum_22 <- kernelUD(Summer_2022_locs_KDE_SPDF[,7])
+
+
+#Side-by-side image of all bobwhite HRs. Kind of silly.
+image(kde_hr_sum_22)
+
+#Mapping KDE home ranges onto study site at a 95% UD
+sum22_kde_hr_ud <- plot(getverticeshr(kde_hr_sum_22, percent = 95))
+
+#We can add either Raster_StudySite or SF_StudySite below.
+plot(habitat.raster, alpha = 0.5, add = TRUE)
+plot(Summer_2022_locs_KDE_SPDF, col = as.data.frame(Summer_2022_locs_KDE_SPDF)[,7], add = TRUE)
+
+#Looking at a data frame of KDE HR sizes across various utilization distributions (e.g, 50%, 90%)
+kde_levels_summer_2022 <- kernel.area(kde_hr_sum_22) 
+
+
+kde_levels_summer_2022 %>%
+  clean_names() %>%
+  view()
+
+kde_levels_summer_2022$ud <- rownames(kde_levels_summer_2022)
+
+kde_levels_summer_2022_95 <- kde_levels_summer_2022 %>%
+  dplyr::filter(ud == 95)
+
+kde_levels_summer_2022_95_sel <- kde_levels_summer_2022_95 %>%
+  dplyr::select(-ud)
+
+kde_95_sum22 <- kde_levels_summer_2022_95_sel %>%
+  pivot_longer(X4207:X4995, names_to = "band_numb", values_to = "hr_size")
+
+mean(kde_95_sum22$hr_size)
+
+median(kde_95_sum22$hr_size)
+
+min(kde_95_sum22$hr_size)
+
+max(kde_95_sum22$hr_size)
+
+kde_95_sum22 %>%
+  ggplot(aes(hr_size)) +
+  geom_histogram(bins = 38)
+```
+
+```{r}
+#### Birds trapped each season ####
+
+fate <- readxl::read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Fate/fate_all_birds_clean.xlsx") %>%
+  clean_names()
+
+fate %>% 
+  view()
+
+fate %>% count(course_season)
+```
+
+Lets attempt to run a RSF on basal area, only
+```{r}
+#### Basal area RSF ####
+#Importing map of study site, setting template for raster stack.
+
+
+habitat <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2022_LCov_BurnStatus/2022_LCOV_MGMT/2022_LCOV_BurnStatus_V2.shp")
+
+
+#Checking the extent of the bounding box.
+extent(habitat@bbox)
+
+#Creating a column that treats land cover (LCOV_MGMT2) types as a numeric factor.
+habitat$hab.factor <- as.numeric(as.factor(habitat$LCOV_MGMT2))
+
+#Viewing levels (landc over types aka HABITAT)
+levels(as.factor(habitat$LCOV_MGMT2))
+
+#Quick look
+#head(habitat)
+
+#Creating template raster. Here, we specify crs, extent, and resolution of our raster. For some reason, model won't run with a resolution below 3 meters. This shouldn't be an issues w telemetry data, as we want a larger raster cell size.
+template.raster <- raster(crs = habitat@proj4string,
+       ext = extent(habitat@bbox),
+       res = 10)
+
+
+#Rasterizing the map of study site, filling with land cover type (as numeric factors). Pretty sure this is unnecessary, as it is handled in our for() loop later.
+habitat.raster <- rasterize(x = habitat,
+                            y = template.raster,
+                            field = habitat$hab.factor)
+
+#plotting habitat raster habitat raster
+plot(habitat.raster)
+#windows()
+
+#Viewing habitat shapefile. Land cover types here are now numeric values.
+plot(habitat, col = as.factor(habitat$LCDENSITYS))
+```
+
+Creating our stack of raster layers for summer 2022 RSF
+```{r}
+#### Creating raster stack #### 
+
+#Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
+habitats <- levels(as.factor(habitat$LCOV_MGMT2))
+
+#Creating a raster list. This will be used in our for loop.
+rasterList <- list()
+
+#Creating our for loop. This creates a distance-based raster layer for each of our seven lcov types.
+#Each raster cell in a given lcov layer will hold the distance to the nearest respective lcov type. This value will be 0 if the cell is within the lcov type. 
+for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
+  # i <- 1 (debugger, leave muted unless needed)
+  #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
+  hab <- subset(habitat, LCOV_MGMT2 == habitats[i])   
+  #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
+  hab$field <- 1 
+  # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
+  #We rasterize hab subset in each stack, based on raster layer. We transfer values from hab$field. Lcov types outside of the respective layer (background) are assigned NA. We calc distance from each cell to nearest respective lcov type, creating a dist-based raster layer.
+  rasterList[[i]] <- distance(rasterize(hab, template.raster, field = hab$field, background = NA))
+  #Creating list of dist-based raster layers, naming each element after corresponding lcov type.
+  names(rasterList)[i] <- habitats[i]
+}
+
+#This extracts the extent of each raster layer in our list.
+lapply(rasterList, extent)
+
+#Now we stack our raster layers.
+distanceStack22 <- stack(rasterList)
+
+#Plotting our seven distance-based raster layers.
+plot(distanceStack22)
+```
+
+Importing Summer 2022 data. 
+```{r}
+#### Importing summer locations #### 
+
+#Data set with 1 loc per day, 3 per week.
+#"/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S22locsUnweightedv2.xlsx"
+
+Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S22locsUnweightedv2.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status != "D",
+         status != "N") %>%
+  mutate(date = lubridate::as_date(date)) %>%
+  filter(date > "2022-04-11")
+
+#Importing "fate" spreadsheet, which has sex and age-class associated with each band number (unlike daily locations data)
+fate <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Fate/fate_clean_2021_22.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  rename(band_numb = band_number)
+
+#Adding sex to each observation/random location.
+Summer_2022_locs <- Summer_2022_locs %>%
+  left_join(fate %>% 
+              dplyr::select(band_numb, sex), by = "band_numb")
+```
+
+Creating tibbles for RSF, adding sex info.
+```{r}
+#### Creating Summer 2022 tibbles for RSFs ####
+
+#Creating tibble for RSF, includes random and known points for each NOBO within kde home range, as well as extracted covariates.  
+rsfData_summer2022 <- Summer_2022_locs %>% 
+  #Converting it to a tibble
+  as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 25) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble.
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+
+      #Below we generate x random points within each NOBO's KDE home range.
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack22)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2022 <- rsfData_summer2022 %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(AG:WL), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+#Creating a non centered/scaled version so we can backtransform the x-axis in our predict plots.
+rsfData_summer22_UCS <- rsfData_summer2022 %>% 
+  mutate(case = ifelse(case_ == T, 1, 0))
+```
+
+Looking at basal area.
+```{r}
+# Load the shapefile
+habitat_basal <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2022/UPDATED_2022_LCOV_MGMT.shp")
+
+habitat_basal_df <- as.data.frame(habitat_basal)
+#View(habitat_basal_df)
+
+# Assuming your data frame is called 'data_frame'
+habitat_basal_df<- habitat_basal_df %>%
+mutate(LCDENSITYS = as.character(LCDENSITYS)) %>%  # Convert factors to characters if necessary
+  mutate(LCDENSITYS = case_when(
+    LCDENSITYS == "NA" ~ "0",  # Replace "NA" with character "0" to avoid confusion with actual NA
+    LCDENSITYS == "<30" ~ "15",
+    LCDENSITYS == "30-60" ~ "45",
+    LCDENSITYS == "60-90" ~ "75",
+    LCDENSITYS == ">90" ~ "100",
+    TRUE ~ LCDENSITYS  # Keep other values as they are
+  )) %>%
+  mutate(LCDENSITYS = as.numeric(LCDENSITYS))
+
+habitat_basal_df %>%
+  view()
+
+habitat_basalNP <- habitat_basal_df %>%
+  dplyr::filter(LCOV %in% "NP") %>%
+  summarize(median_ba = median(LCDENSITYS))
+
+# Modify the 'LCDENSITYS' column
+habitat_basal$LCDENSITYS <- gsub("30-60", "med", habitat_basal$LCDENSITYS)
+habitat_basal$LCDENSITYS <- gsub("<30", "low", habitat_basal$LCDENSITYS)
+habitat_basal$LCDENSITYS <- gsub("60-90", "high", habitat_basal$LCDENSITYS)
+habitat_basal$LCDENSITYS <- gsub(">90", "closed", habitat_basal$LCDENSITYS)
+
+# If there are any empty or NA values, replace them with "none"
+habitat_basal$LCDENSITYS[habitat_basal$LCDENSITYS == "" | is.na(habitat_basal$LCDENSITYS)] <- "none"
+```
+
+```{r}
+#Checking the extent of the bounding box.
+extent(habitat_basal@bbox)
+
+#Creating a column that treats land cover (LCOV_MGMT2) types as a numeric factor.
+habitat_basal$hab.factor <- as.numeric(as.factor(habitat_basal$LCDENSITYS))
+
+#Viewing levels (landc over types aka HABITAT)
+levels(as.factor(habitat_basal$LCDENSITYS))
+
+#Quick look
+#head(habitat)
+
+#Creating template raster. Here, we specify crs, extent, and resolution of our raster. For some reason, model won't run with a resolution below 3 meters. This shouldn't be an issues w telemetry data, as we want a larger raster cell size.
+template.raster <- raster(crs = habitat_basal@proj4string,
+       ext = extent(habitat_basal@bbox),
+       res = 10)
+
+
+#Rasterizing the map of study site, filling with land cover type (as numeric factors). Pretty sure this is unnecessary, as it is handled in our for() loop later.
+habitat.raster <- rasterize(x = habitat,
+                            y = template.raster,
+                            field = habitat_basal$hab.factor)
+
+#plotting habitat raster habitat raster
+plot(habitat.raster)
+#windows()
+
+#Viewing habitat shapefile. Land cover types here are now numeric values.
+plot(habitat, col = as.factor(habitat_basal$LCDENSITYS))
+
+```
+
+Creating our stack of raster layers. This will be used in Summer 2022 RSF for basal area.
+```{r}
+#### Creating raster stack for basal area #### 
+
+#Assigning numeric land cover types to "habitats" as levels. "habitat" is our shapefile, while habitat.raster is the rasterized version of our shapefile. Unsure if it matters that we assign levels from the shapefile version.
+habitats <- levels(as.factor(habitat_basal$LCDENSITYS))
+
+#Creating a raster list. This will be used in our for loop.
+rasterList <- list()
+
+#Creating our for loop. This creates a distance-based raster layer for each of our seven lcov types.
+#Each raster cell in a given lcov layer will hold the distance to the nearest respective lcov type. This value will be 0 if the cell is within the lcov type. 
+for(i in 1:length(habitats)){   #We'll loop through each lcov type in "habitats".
+  # i <- 1 (debugger, leave muted unless needed)
+  #for each layer in the stack, we create a subset called "hab" that only contains that respective lcov type.
+  hab <- subset(habitat_basal, LCDENSITYS == habitats[i])   
+  #assigning a value of 1 to each location in hab in a new column called field. So, in ag layer, each cell in ag$field = 1.
+  hab$field <- 1 
+  # plot(hab) Leave muted. (unnecessary unless you want to plot each layer as the loop runs) 
+  #We rasterize hab subset in each stack, based on raster layer. We transfer values from hab$field. Lcov types outside of the respective layer (background) are assigned NA. We calc distance from each cell to nearest respective lcov type, creating a dist-based raster layer.
+  rasterList[[i]] <- distance(rasterize(hab, template.raster, field = hab$field, background = NA))
+  #Creating list of dist-based raster layers, naming each element after corresponding lcov type.
+  names(rasterList)[i] <- habitats[i]
+}
+
+#This extracts the extent of each raster layer in our list.
+lapply(rasterList, extent)
+
+#Now we stack our raster layers.
+distanceStack22_basal <- stack(rasterList)
+
+plot(distanceStack22_basal)
+```
+
+Importing Summer 2022 data. 
+```{r}
+#### Importing Summer 2023 locations #### 
+
+#/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S23locsUnweighted.xlsx
+
+Summer_2022_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S22locsUnweightedv2.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status == "A") %>%
+  mutate(date = lubridate::as_date(date)) %>%
+  filter(date >= "2022-04-12",
+         date <= "2022-09-30")
+
+```
+
+```{r}
+rsfData_summer2022_basal <- Summer_2022_locs %>% 
+  #Converting it to a tibble
+   as_tibble() %>%
+   #Removing timezone offset, letter "T", creating DT.GMT column by converting to POSIX format, creating DT column by subtracting 5 hrs (time zones)
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_created)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>% 
+  #Nesting by band number into new column called indData.
+  nest(indData = !band_numb) %>% 
+  #Determining number of locs for each bird, putting in new column n.locs and filtering for locs > n. Map functions apply a function to each element in a list.
+  mutate(n.locs = map_dbl(indData, ~nrow(.))) %>% 
+  filter(n.locs > 25) %>%
+  #Making a track object. The locations we imported were just a snapshot of a location at a given time, while track objects will represent the movement of NOBOs over time. Map applies the function to each nested indData within the tibble (it generated KDE homeranges, UDs and isopleths for each bird).
+  mutate(tracks = purrr::map(indData, function(x){
+  #x <- rsfData$indData[[1]] This is a bugfinder. Leave muted unless needed.
+    x %>%
+      make_track(.x = easting,
+                 .y = northing,
+                 .t = DT,
+                 crs = 26916)
+    })) %>%
+  mutate(kde = purrr::map(tracks, function(a){
+    # a <- rsfData_summer2022$tracks[[2]]
+    a %>%
+      hr_kde() %>%
+      hr_ud() %>%
+      hr_isopleths(levels = c(.5,.95))
+    })) %>%
+  # hr_to_sf(kde, band_numb, tracks)
+  mutate(indData = map2(tracks, kde, function(x,y){
+      #Below we generate x random points within each NOBO's KDE home range (95% UD).
+      random_points(y, n = nrow(x) * 10, level=.95, presence = x) %>%
+      #Extracting covariates (lcov types) of known and random points
+      extract_covariates(distanceStack23_basal)
+  })) %>%
+  #Unnesting data back into original rows.
+  unnest(indData) 
+
+
+#Creating column "case" where TRUEs (known points) have value of 1, and Falses (random points) have value of 0. Standardizing our covariates around the center.
+rsfData_modified_summer2022_basal <- rsfData_summer2022_basal  %>% 
+  mutate(case = ifelse(case_ == T, 1, 0)) %>%
+  mutate_at(vars(closed:none), .funs = function(x){as.numeric(scale(x, center = T))}) 
+```
+
