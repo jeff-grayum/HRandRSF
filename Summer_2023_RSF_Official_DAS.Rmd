@@ -2042,10 +2042,10 @@ ss_bu_df <- data.frame(
   NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(ss_bu_values)),
   PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(ss_bu_values)),
   PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(ss_bu_values)),
-  SS_UB = rep(mean(rsf_modified_2022_23$SS_BU), length(ss_bu_values)),
+  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(ss_bu_values)),
   SS_BU = ss_bu_values,
   UM = rep(mean(rsf_modified_2022_23$UM), length(ss_bu_values)),
-    WFP_FF = rep(mean(rsf_modified_2022_23$WFP_FF), length(ss_bu_values)),
+  WFP_FF = rep(mean(rsf_modified_2022_23$WFP_FF), length(ss_bu_values)),
   FL = rep(mean(rsf_modified_2022_23$FL), length(ss_bu_values)),
   band_numb = sample(rsf_modified_2022_23$band_numb, size = length(ss_bu_values), replace = TRUE)
   )
@@ -2067,7 +2067,48 @@ ss_bu_pred_draws_sum%>%
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
    labs(x = "Distance to SS_UB (centered and scaled)", 
-       y = "Probability of selection")
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
+        
+# Reverse centering and scaling for SS_BU
+ss_bu_pred_draws_sum <- ss_bu_pred_draws_sum %>%
+  mutate(
+    SS_BU_original = (SS_BU * 170.3421) + 204.9688  # Transform scaled to original
+  )
+
+# Plot using the original x-axis values for SS_BU
+SS_BU_og <- ss_bu_pred_draws_sum %>% 
+  filter(SS_BU_original >= 0) %>%
+  ggplot(aes(SS_BU_original, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "gray50", alpha = 0.5) +
+  labs(x = "Distance to SS_BU (original scale)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line("black"),
+    axis.ticks = element_line("black"),
+    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+  )
 
 
 
@@ -2122,6 +2163,41 @@ hp_bu_pred_draws_sum%>%
         legend.title = element_text(colour="black",size=12),
         legend.text = element_text(colour="black",size=12),
         axis.text.y = element_text(colour="black",size=12))
+        
+# Reverse centering and scaling for HP_BU
+hp_bu_pred_draws_sum <- hp_bu_pred_draws_sum %>%
+  mutate(
+    HP_BU_original = (HP_BU * 205.82) + 234.62  # Transform scaled to original
+  )
+
+# Plot using the original x-axis values for HP_BU
+HP_BU_og <- hp_bu_pred_draws_sum %>% 
+  filter(HP_BU_original >= 0) %>%
+  ggplot(aes(HP_BU_original, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "brown", alpha = 0.5) +
+  labs(x = "Distance to HP_BU (original scale)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line("black"),
+    axis.ticks = element_line("black"),
+    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+  )
+        
+        
+        
+        
+        
+        
 
 #HP_UB
 hp_ub_values <- seq(min(rsf_modified_2022_23$HP_UB, na.rm = TRUE), 
