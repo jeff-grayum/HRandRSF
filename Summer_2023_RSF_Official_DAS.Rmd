@@ -56,11 +56,11 @@ options(mc.cores = 4)
 
 ```
 
-Importing map of study site, setting template for raster stack.
+Importing map of 2023 study site, setting template for raster stack.
 ```{r}
 ##### Importing map of study site as a shape file #### 
 
-habitat <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2023_FL_RC/2023_LCOV_FL_Final.shp")
+habitat <- raster::shapefile("/Volumes/Samsung_T5/ThesisStudySite/LCOV_UPDATE/2023_FL_RC/2023_shapefile.shp")
 
 
 habitat %>%
@@ -142,7 +142,7 @@ Importing Summer 2023 data.
 
 #/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S23locsUnweighted.xlsx
 
-Summer_2023_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S23locsUnweighted.xlsx", setclass = "tibble") %>%
+Summer_2023_locs <- rio::import("/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/Summer2023Locs.xlsx", setclass = "tibble") %>%
   clean_names() %>%
   filter(status == "A") %>%
   mutate(date = lubridate::as_date(date)) %>%
@@ -445,7 +445,7 @@ rsf_modified_2022_23_male <- rbind(
 )
 
 #non centered/scaled version
-rsfData22_23_UCS <- rbind(rsfData_summer2022, rsfData_summer2023)
+rsfData22_23_UCS <- rbind(rsfData_summer22_UCS, rsfData_summer23_UCS)
 ```
 
 
@@ -593,12 +593,6 @@ pop.rsf_summer2022_23_bayes <- brm(
 
   #Specifying a binomial model. 
   family = "binomial",
-
-  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
-  #prior = c(
-    #set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
-    #set_prior("normal(0, 2)", class = "b"),         # Prior for the fixed effects (land cover types)
-    #set_prior("normal(0, 2)", class = "sd"),         # Prior for the standard deviation (random effect...band_numb),
 
   #Specifying 10000 iterations. A good balance of speed and accuracy.
   iter = 10000,
@@ -835,14 +829,6 @@ coefficients_data_no_intercept_2022_2023 %>%
 
 
 
-# For the trace plots
-mcmc_trace(pop.rsf_summer2022_23_bayes, 
-           pars = c("b_Intercept", "b_AG", "b_UM", "b_NP_UB", "b_NP_BU", "b_PP_BU", "b_HW", "b_HP_BU", "b_SS_UB", "b_SS_BU", "b_WFP_FF", "b_FL"),
-           n_warmup = 5000,
-           facet_args = list(ncol = 2)) +
-  xlab("Iteration") +
-  ylab("Parameter Estimate") +
-  theme_bw()
 
 # Getting the posterior samples as a data frame (posterior package deprecated)...
 posterior_draws <- as_draws_df(pop.rsf_summer2022_23_bayes)
@@ -979,6 +965,32 @@ posterior_draws_long %>%
  
 #### Probability of direction ####
 p_direction(x = pop.rsf_summer2022_23_bayes)
+
+# Updated plot with rotated x-axis labels and a horizontal line at y = 1
+coefficients_data_no_intercept_2022_2023 %>%
+   mutate(
+     variable = factor(variable, levels = names(new_names)), # Ensure factor levels match original names
+     variable = new_names[variable], # Replace with new names
+     odds_ratio = round(odds_ratio, 2) # Round odds ratio to 2 decimal places
+   ) %>% 
+  ggplot(aes(y = reorder(variable, -estimate), x = odds_ratio)) +
+  geom_point() +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "gray") + # Add dashed vertical line at 1
+  theme_bw() +
+  labs(y = "Land cover", x = "Odds Ratio") +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.ticks = element_line(color = "black"),
+        axis.title.y = element_text(color = "black", size = 12, family = "Times New Roman"),
+        axis.title.x = element_text(color = "black", size = 12, family = "Times New Roman"),
+        axis.text.y = element_text(color = "black", size = 12, family = "Times New Roman"),
+        plot.title = element_text(size = 14, family = "Times New Roman"),
+        plot.subtitle = element_text(size = 12, family = "Times New Roman"),
+        plot.caption = element_text(size = 10, family = "Times New Roman"))
+
+
 ```
 
 Visualizing data for female birds 22/23
@@ -1065,6 +1077,8 @@ coefficients_data_no_intercept_2022_2023 %>%
         plot.title = element_text(size = 14, family = "Times New Roman"),
         plot.subtitle = element_text(size = 12, family = "Times New Roman"),
         plot.caption = element_text(size = 10, family = "Times New Roman"))
+
+
 
 ```
 
@@ -1593,41 +1607,99 @@ p_direction(x = rsf22_23_bayes_burned_unburned)
 
 Predict plots       
 ```{r}
+
 #### Predict plots ####
 
+#Our prediction model
 pred_model <-  brm(
-  
-  #Modelling 'case' as a binomial variable (either 0 or 1...aka random or known points). Predictor variables are our land cover types, band number  is our random effect.
   case | trials(1) ~ AG + FL + UM + NP_UB + NP_BU + PP_UB + PP_BU + HW + HP_UB + HP_BU + SS_UB + SS_BU + WFP_FF + (1|band_numb),
-
-
-  #Specifying our dataset
   data = rsf_modified_2022_23,
-
-  #Specifying a binomial model. 
   family = "binomial",
-
-  #Setting our priors. We're using a fairly wide distribution (SD=5) centered around 0, which suggests we know little about the parameters before starting. I'm unsure if these prior distributions are appropriate.
- #prior = c(
-    #set_prior("normal(0, 2)", class = "Intercept"), # Prior for the intercept. 
-    ##set_prior("normal(0, 2)", class = "sd")         # Prior for the standard deviation (random effect...band_numb)
-  #),
-
-  #Specifying 10,000 iterations. A good balance of speed and accuracy.
   iter = 10000,
-
-  #4 MCMC chains seems to be a common choice for robust modeling.
   chains = 4,
-  
   seed = 123,
-  
   warmup = 5000,
+  control = list(adapt_delta = 0.9))
   
-   #Adjusting adapt_delta... This tells sampler to be more careful in "trickier" parts of the model.
-  control = list(adapt_delta = 0.9)
-)
+#Feed line first
+fl_values <- seq(min(rsf_modified_2022_23$FL, na.rm = TRUE), 
+                 max(rsf_modified_2022_23$FL, na.rm = TRUE), 
+                 length.out = 1000)
 
-#Let's start with NP_BU
+fl_df <- data.frame(
+  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(fl_values)),
+  FL = fl_values,
+  AG = rep(mean(rsf_modified_2022_23$AG), length(fl_values)),
+  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(fl_values)),
+  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(fl_values)),
+  HW = rep(mean(rsf_modified_2022_23$HW), length(fl_values)),
+  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(fl_values)),
+  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(fl_values)),
+  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(fl_values)),
+  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(fl_values)),
+  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(fl_values)),
+  UM = rep(mean(rsf_modified_2022_23$UM), length(fl_values)),
+  WFP_FF = rep(mean(rsf_modified_2022_23$WFP_FF), length(fl_values)),
+  band_numb = sample(rsf_modified_2022_23$band_numb, size = length(fl_values), replace = TRUE)
+  )
+
+
+fl_pred_draws <- epred_draws(newdata = fl_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(band | numb))
+
+fl_pred_draws_sum <- fl_pred_draws %>%
+  group_by(FL) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+            
+fl_pred_draws_sum%>% 
+  ggplot(aes(FL, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "black", alpha = 0.4) +
+  labs(x = "Distance to FL (centered and scaled)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
+        
+# Reverse centering and scaling for FL
+fl_pred_draws_sum <- fl_pred_draws_sum %>%
+  mutate(
+    FL_original = (FL * 103.83) + 79.73  
+  )
+
+# Plot using the original x-axis values for FL
+FL_og <- fl_pred_draws_sum %>%
+  ggplot(aes(FL_original, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "black", alpha = 0.4) +
+  labs(x = "Distance to FL (original scale)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line("black"),
+    axis.ticks = element_line("black"),
+    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+  )
+
+#NP_BU
 np_bu_values <- seq(min(rsf_modified_2022_23$NP_BU, na.rm = TRUE), 
                  max(rsf_modified_2022_23$NP_BU, na.rm = TRUE), 
                  length.out = 1000)
@@ -1658,7 +1730,6 @@ np_bu_pred_draws_sum <- np_bu_pred_draws %>%
             low_ci = quantile(.prediction, 0.025),
             upper_ci = quantile(.prediction, 0.975))
 
-summary(np_bu_pred_draws)
 
 np_bu_pred_draws_sum%>% 
   ggplot(aes(NP_BU, mean_fit)) +
@@ -1680,49 +1751,34 @@ np_bu_pred_draws_sum%>%
         axis.text.y = element_text(colour="black",size=12))
 
 
-#scale_x_continuous(breaks=seq(min(np_bu_pred_draws_sum$NP_BU),max(np_bu_pred_draws_sum$NP_BU),length.out = 10),
-                     #labels=(round((seq(min(np_bu_pred_draws_sum$NP_BU),max(np_bu_pred_draws_sum$NP_BU),length.out = 10)*sd(rsfData22_23_UCS$NP_BU) +mean(rsfData22_23_UCS$NP_BU)),1))) 
-
-
-
-
-#FL TIME
-fl_values <- seq(min(rsf_modified_2022_23$FL, na.rm = TRUE), 
-                 max(rsf_modified_2022_23$FL, na.rm = TRUE), 
-                 length.out = 1000)
-
-fl_df <- data.frame(
-  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(fl_values)),
-  FL = fl_values,
-  AG = rep(mean(rsf_modified_2022_23$AG), length(fl_values)),
-  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(fl_values)),
-  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(fl_values)),
-  HW = rep(mean(rsf_modified_2022_23$HW), length(fl_values)),
-  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(fl_values)),
-  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(fl_values)),
-  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(fl_values)),
-  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(fl_values)),
-  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(fl_values)),
-  UM = rep(mean(rsf_modified_2022_23$UM), length(fl_values)),
-  WFP_FF = rep(mean(rsf_modified_2022_23$WFP_FF), length(fl_values)),
-  band_numb = sample(rsf_modified_2022_23$band_numb, size = length(fl_values), replace = TRUE)
+# Reverse centering and scaling np_bu
+np_bu_pred_draws_sum <- np_bu_pred_draws_sum %>%
+  mutate(
+    NP_BU_original = (NP_BU * 97.47) + 80.74  # Transform scaled to original
   )
 
-
-fl_pred_draws <- epred_draws(newdata = fl_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(band | numb))
-
-fl_pred_draws_sum <- fl_pred_draws %>%
-  group_by(FL) %>%
-  summarize(mean_fit = mean(.prediction),
-            low_ci = quantile(.prediction, 0.025),
-            upper_ci = quantile(.prediction, 0.975))
-
-
-
-fl_pred_draws_sum%>% 
-  ggplot(aes(FL, mean_fit)) +
+# Plot using the original x-axis values
+NP_BU_og <- np_bu_pred_draws_sum %>%
+  ggplot(aes(NP_BU_original, mean_fit)) +
   geom_line() +
-  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "black", alpha = 0.5)
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "#006400", alpha = 0.4) +
+  labs(x = "Distance to NP_BU (original scale)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line("black"),
+    axis.ticks = element_line("black"),
+    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+  )
+
 
 #SS_UB
 ss_ub_values <- seq(min(rsf_modified_2022_23$SS_UB, na.rm = TRUE), 
@@ -1750,7 +1806,6 @@ ss_ub_df <- data.frame(
 ss_ub_pred_draws <- epred_draws(newdata = ss_ub_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(1 | band_numb))
 
 
-
 ss_ub_pred_draws_sum <- ss_ub_pred_draws %>%
   group_by(SS_UB) %>%
   summarize(mean_fit = mean(.prediction),
@@ -1758,12 +1813,220 @@ ss_ub_pred_draws_sum <- ss_ub_pred_draws %>%
             upper_ci = quantile(.prediction, 0.975))
 
 
-ss_ub_pred_draws_sum%>% 
+ss_ub_pred_draws_sum %>% 
   ggplot(aes(SS_UB, mean_fit)) +
   geom_line() +
-  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.5) +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "gray50", alpha = 0.5) +
    labs(x = "Distance to SS_UB (centered and scaled)", 
-       y = "Probability of selection")
+       y = "Probability of selection") +
+  labs(x = "Distance to SS_UB (centered and scaled)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
+        
+        
+# Reverse centering and scaling for SS_UB
+ss_ub_pred_draws_sum <- ss_ub_pred_draws_sum %>%
+  mutate(
+    SS_UB_original = (SS_UB * 116.87) + 144.02  
+  )
+
+# Plot using the original x-axis values for SS_UB
+SS_UB_og <- ss_ub_pred_draws_sum %>% 
+  ggplot(aes(SS_UB_original, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "gray50", alpha = 0.5) +
+  labs(x = "Distance to SS_UB (original scale)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line("black"),
+    axis.ticks = element_line("black"),
+    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+  )
+
+#HP_UB
+hp_ub_values <- seq(min(rsf_modified_2022_23$HP_UB, na.rm = TRUE), 
+                 max(rsf_modified_2022_23$HP_UB, na.rm = TRUE), 
+                 length.out = 1000)
+
+hp_ub_df <- data.frame(
+  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(hp_ub_values)),
+  WFP_FF = rep(mean(rsf_modified_2022_23$WFP_FF), length(hp_ub_values)),
+  FL = rep(mean(rsf_modified_2022_23$FL), length(hp_ub_values)),
+  AG = rep(mean(rsf_modified_2022_23$AG), length(hp_ub_values)),
+  HP_UB= hp_ub_values,
+  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(hp_ub_values)),
+  HW = rep(mean(rsf_modified_2022_23$HW), length(hp_ub_values)),
+  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(hp_ub_values)),
+  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(hp_ub_values)),
+  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(hp_ub_values)),
+  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(hp_ub_values)),
+  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(hp_ub_values)),
+  UM = rep(mean(rsf_modified_2022_23$UM), length(hp_ub_values)),
+  band_numb = sample(rsf_modified_2022_23$band_numb, size = length(hp_ub_values), replace = TRUE)
+)
+
+
+hp_ub_pred_draws <- epred_draws(newdata = hp_ub_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(1|band_numb))
+
+hp_ub_pred_draws_sum <- hp_ub_pred_draws %>%
+  group_by(HP_UB) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+summary(hp_ub_pred_draws)
+
+hp_ub_pred_draws_sum%>% 
+  ggplot(aes(HP_UB, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "brown", alpha = 0.4) +
+  labs(x = "Distance to HP_UB (centered and scaled)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
+
+# Reverse centering and scaling for HP_UB
+hp_ub_pred_draws_sum <- hp_ub_pred_draws_sum %>%
+  mutate(
+    HP_UB_original = (HP_UB * 154.16) + 193.21 
+  )
+
+# Plot using the original x-axis values for HP_UB
+HP_UB_og <- hp_ub_pred_draws_sum %>%
+  ggplot(aes(HP_UB_original, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "brown", alpha = 0.4) +
+  labs(x = "Distance to HP_UB (original scale)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line("black"),
+    axis.ticks = element_line("black"),
+    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+  )
+  
+
+#NP_UB
+np_ub_values <- seq(min(rsf_modified_2022_23$NP_UB, na.rm = TRUE), 
+                 max(rsf_modified_2022_23$NP_UB, na.rm = TRUE), 
+                 length.out = 1000)
+
+np_ub_df <- data.frame(
+  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(np_ub_values)),
+    WFP_FF = rep(mean(rsf_modified_2022_23$WFP_FF), length(np_ub_values)),
+  FL = rep(mean(rsf_modified_2022_23$FL), length(np_ub_values)),
+  AG = rep(mean(rsf_modified_2022_23$AG), length(np_ub_values)),
+  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(np_ub_values)),
+  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(np_ub_values)),
+  HW = rep(mean(rsf_modified_2022_23$HW), length(np_ub_values)),
+  NP_UB = np_ub_values,
+  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(np_ub_values)),
+  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(np_ub_values)),
+  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(np_ub_values)),
+  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(np_ub_values)),
+  UM = rep(mean(rsf_modified_2022_23$UM), length(np_ub_values)),
+  band_numb = sample(rsf_modified_2022_23$band_numb, size = length(np_ub_values), replace = TRUE)
+)
+
+
+np_ub_pred_draws <- epred_draws(newdata = np_ub_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(1|band_numb))
+
+np_ub_pred_draws_sum <- np_ub_pred_draws %>%
+  group_by(NP_UB) %>%
+  summarize(mean_fit = mean(.prediction),
+            low_ci = quantile(.prediction, 0.025),
+            upper_ci = quantile(.prediction, 0.975))
+
+summary(np_ub_pred_draws)
+
+np_ub_pred_draws_sum%>% 
+  ggplot(aes(NP_UB, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "#006400", alpha = 0.4) +
+  labs(x = "Distance to NP_UB (centered and scaled)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        #panel.background = element_rect(fill = "white"),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
+        
+
+
+# Reverse centering and scaling for NP_UB
+np_ub_pred_draws_sum <- np_ub_pred_draws_sum %>%
+  mutate(
+    NP_UB_original = (NP_UB * 76.89) + 72.48
+  )
+
+# Plot using the original x-axis values for NP_UB
+NP_UB_og <- np_ub_pred_draws_sum %>%
+  ggplot(aes(NP_UB_original, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "#006400", alpha = 0.4) +
+  labs(x = "Distance to NP_UB (original scale)", 
+       y = "Probability of selection") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line("black"),
+    axis.ticks = element_line("black"),
+    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+  )
+
+
 
 #SS_BU
 ss_bu_values <- seq(min(rsf_modified_2022_23$SS_BU, na.rm = TRUE), 
@@ -2045,6 +2308,57 @@ all_covs_pred %>%
         axis.text.y = element_text(colour="black",size=12)) 
 
 
+# Update the covariate labels in the dataset
+all_covs_pred <- all_covs_pred %>%
+  mutate(Covariate = recode(Covariate,
+                            "FL" = "Feed line",
+                            "NP_BU" = "Natural pine (B)",
+                            "SS_UB" = "Shrub/scrub (U)",
+                            "HP_UB" = "Hardwood/pine (U)",
+                            "NP_UB" = "Natural pine (U)",
+                            "SS_BU" = "Shrub/scrub (B)",
+                            "HP_BU" = "Hardwood/pine (B)"))
+
+# Plot with updated labels
+all_covs_pred %>%
+  ggplot(aes(value, mean_fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci, fill = Covariate), alpha = 0.6) +
+  scale_color_manual(values = c("Feed line" = "black",
+                                "Shrub/scrub (U)" = "gray50",
+                                "Shrub/scrub (B)" = "gray50",
+                                "Natural pine (B)" = "#006400",
+                                "Natural pine (U)" = "#006400",
+                                "Hardwood/pine (B)" = "brown",
+                                "Hardwood/pine (U)" = "brown")) +
+  scale_fill_manual(values = c("Feed line" = "black",
+                                "Shrub/scrub (U)" = "gray50",
+                                "Shrub/scrub (B)" = "gray50",
+                                "Natural pine (B)" = "#006400",
+                                "Natural pine (U)" = "#006400",
+                                "Hardwood/pine (B)" = "brown",
+                                "Hardwood/pine (U)" = "brown")) +
+  labs(x = "Distance to covariate (centered and scaled)", 
+       y = "Probability of selection") +
+  facet_wrap(~ Covariate, scales = "free_x", ncol = 4) +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.ticks = element_line(color = "black"),
+        axis.text.x = element_text(color = "black", size = 12, family = "Times New Roman"),
+        axis.text.y = element_text(color = "black", size = 12, family = "Times New Roman"),
+        axis.title.x = element_text(color = "black", size = 12, family = "Times New Roman"),
+        axis.title.y = element_text(color = "black", size = 12, family = "Times New Roman"),
+        legend.title = element_text(color = "black", size = 12, family = "Times New Roman"),
+        legend.text = element_text(color = "black", size = 12, family = "Times New Roman"),
+        strip.text = element_text(color = "black", size = 12, family = "Times New Roman")) # Adjust facet text
+
+
+
+
+
 
 # Renaming covariates directly
 all_covs_pred %>%
@@ -2113,7 +2427,6 @@ all_covs_pred %>%
         plot.title = element_text(size = 14, family = "Times New Roman"),
         plot.subtitle = element_text(size = 12, family = "Times New Roman"),
         plot.caption = element_text(size = 10, family = "Times New Roman"))
-
 ```
 
 ```{r}
@@ -2833,3 +3146,57 @@ posterior_draws_long %>%
 #### Probability of direction ####
 p_direction(x = pop.rsf_summer2022_23_bayes)
 ```
+
+Cross-validating our model
+```{r}
+#### Cross-validating our model with ppc_dense_overlay ####
+install.packages("bayesplot")
+library(bayesplot)
+
+
+# Generate posterior predictive samples
+posterior_samples <- posterior_predict(
+  pop.rsf_summer2022_23_bayes, 
+  draws = 100  # Use only 100 posterior draws
+)
+
+
+# Observed data
+observed_data <- rsf_modified_2022_23$case
+
+# Create density overlay plot
+ppc_dens_overlay(observed_data, posterior_samples)
+
+
+# Observed data
+observed_data <- rsf_modified_2022_23$case
+
+# Create density overlay plot
+ppc_dens_overlay(observed_data, posterior_samples)
+
+
+ppc_dens_overlay(observed_data, posterior_samples[1:100, ])
+
+
+bayesplot::color_scheme_set("brightblue")
+ppc_dens_overlay(observed_data, posterior_samples[1:100, ]) +
+  theme_minimal()
+
+
+#Trying loo
+pop.rsf_summer2022_23_bayes <- brm(
+  case | trials(1) ~ AG + FL + UM + NP_UB + NP_BU + PP_UB + PP_BU +
+    HW + HP_UB + HP_BU + SS_UB + SS_BU + WFP_FF + (1 | band_numb),
+  data = rsf_modified_2022_23,
+  family = "binomial",
+  iter = 1000,
+  chains = 4,
+  seed = 123
+)
+
+loo_result <- loo(pop.rsf_summer2022_23_bayes)
+print(loo_result)
+
+```
+
+
