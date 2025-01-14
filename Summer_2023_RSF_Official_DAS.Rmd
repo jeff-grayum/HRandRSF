@@ -1682,21 +1682,20 @@ FL_og <- fl_pred_draws_sum %>%
   ggplot(aes(FL_original, mean_fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "black", alpha = 0.4) +
-  labs(x = "Distance to FL (original scale)", 
-       y = "Probability of selection") +
+  labs(title = "Feed line", x = NULL, y = NULL) +
   theme_bw() +
-  theme(
+  scale_x_continuous(breaks = c(0, 400, 800)) +
+  scale_y_continuous(breaks = c(0.05, 0.1, 0.15), limits = c(0, 0.15)) +
+ theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     axis.line = element_line("black"),
     axis.ticks = element_line("black"),
-    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+    plot.title = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 10, family = "Times New Roman")
   )
 
 #NP_BU
@@ -1731,7 +1730,7 @@ np_bu_pred_draws_sum <- np_bu_pred_draws %>%
             upper_ci = quantile(.prediction, 0.975))
 
 
-np_bu_pred_draws_sum%>% 
+np_bu_pred_draws_sum %>% 
   ggplot(aes(NP_BU, mean_fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "#006400", alpha = 0.4) +
@@ -1762,21 +1761,20 @@ NP_BU_og <- np_bu_pred_draws_sum %>%
   ggplot(aes(NP_BU_original, mean_fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "#006400", alpha = 0.4) +
-  labs(x = "Distance to NP_BU (original scale)", 
-       y = "Probability of selection") +
+  labs(title = "Natural pine (B)", x = NULL, y = NULL) +
   theme_bw() +
+  scale_x_continuous(breaks = c(0, 400, 800)) +
+  scale_y_continuous(breaks = c(0.05, 0.1, 0.15), limits = c(0, 0.15), labels = NULL) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     axis.line = element_line("black"),
     axis.ticks = element_line("black"),
-    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+    plot.title = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 10, family = "Times New Roman")
   )
 
 
@@ -1846,21 +1844,19 @@ SS_UB_og <- ss_ub_pred_draws_sum %>%
   ggplot(aes(SS_UB_original, mean_fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "gray50", alpha = 0.5) +
-  labs(x = "Distance to SS_UB (original scale)", 
-       y = "Probability of selection") +
+  labs(title = "Shrub/scrub (U)", x = NULL, y = NULL) +
   theme_bw() +
+  scale_x_continuous(breaks = c(0, 400, 800)) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     axis.line = element_line("black"),
     axis.ticks = element_line("black"),
-    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+    plot.title = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 10, family = "Times New Roman")
   )
 
 #HP_UB
@@ -1926,21 +1922,19 @@ HP_UB_og <- hp_ub_pred_draws_sum %>%
   ggplot(aes(HP_UB_original, mean_fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "brown", alpha = 0.4) +
-  labs(x = "Distance to HP_UB (original scale)", 
-       y = "Probability of selection") +
+  labs(title = "Hardwood/pine (U)", x = NULL, y = NULL) +
   theme_bw() +
+  scale_x_continuous(breaks = c(0, 400, 800)) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     axis.line = element_line("black"),
     axis.ticks = element_line("black"),
-    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+    plot.title = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 10, family = "Times New Roman")
   )
   
 
@@ -2009,21 +2003,19 @@ NP_UB_og <- np_ub_pred_draws_sum %>%
   ggplot(aes(NP_UB_original, mean_fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "#006400", alpha = 0.4) +
-  labs(x = "Distance to NP_UB (original scale)", 
-       y = "Probability of selection") +
+  labs(title = "Natural pine (U)", x = NULL, y = NULL) +
   theme_bw() +
+   scale_x_continuous(breaks = c(0, 250, 500)) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     axis.line = element_line("black"),
     axis.ticks = element_line("black"),
-    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+    plot.title = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 10, family = "Times New Roman")
   )
 
 
@@ -2093,21 +2085,19 @@ SS_BU_og <- ss_bu_pred_draws_sum %>%
   ggplot(aes(SS_BU_original, mean_fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "gray50", alpha = 0.5) +
-  labs(x = "Distance to SS_BU (original scale)", 
-       y = "Probability of selection") +
+  labs(title = "Shrub/scrub (B)", x = NULL, y = NULL) +
   theme_bw() +
+   scale_x_continuous(breaks = c(0, 500, 1000)) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     axis.line = element_line("black"),
     axis.ticks = element_line("black"),
-    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+    plot.title = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 10, family = "Times New Roman")
   )
 
 
@@ -2119,7 +2109,7 @@ hp_bu_values <- seq(min(rsf_modified_2022_23$HP_BU, na.rm = TRUE),
 
 hp_bu_df <- data.frame(
   NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(hp_bu_values)),
-    WFP_FF = rep(mean(rsf_modified_2022_23$WFP_FF), length(hp_bu_values)),
+  WFP_FF = rep(mean(rsf_modified_2022_23$WFP_FF), length(hp_bu_values)),
   FL = rep(mean(rsf_modified_2022_23$FL), length(hp_bu_values)),
   AG = rep(mean(rsf_modified_2022_23$AG), length(hp_bu_values)),
   HP_BU = hp_bu_values,
@@ -2167,7 +2157,7 @@ hp_bu_pred_draws_sum%>%
 # Reverse centering and scaling for HP_BU
 hp_bu_pred_draws_sum <- hp_bu_pred_draws_sum %>%
   mutate(
-    HP_BU_original = (HP_BU * 205.82) + 234.62  # Transform scaled to original
+    HP_BU_original = (HP_BU * 205.82) + 234.62 
   )
 
 # Plot using the original x-axis values for HP_BU
@@ -2176,134 +2166,42 @@ HP_BU_og <- hp_bu_pred_draws_sum %>%
   ggplot(aes(HP_BU_original, mean_fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "brown", alpha = 0.5) +
-  labs(x = "Distance to HP_BU (original scale)", 
-       y = "Probability of selection") +
+  labs(title = "Hardwood/pine (B)", x = NULL, y = NULL) +
   theme_bw() +
+   scale_x_continuous(breaks = c(0, 600, 1200)) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     axis.line = element_line("black"),
     axis.ticks = element_line("black"),
-    axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
-    plot.title = element_text(colour = "black", size = 14, family = "Times New Roman")
+    plot.title = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.text.y = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.x = element_text(colour = "black", size = 10, family = "Times New Roman"),
+    axis.title.y = element_text(colour = "black", size = 10, family = "Times New Roman")
   )
         
         
-        
-        
-        
-        
+final_faceted_plot <- (FL_og + NP_BU_og + SS_UB_og + HP_UB_og + 
+                       NP_UB_og + SS_BU_og + HP_BU_og + 
+                       plot_layout(nrow = 2, guides = "collect")) &
+  plot_annotation(
+    theme = theme(
+      plot.title = element_text(size = 14, family = "Times New Roman")
+    )
+  ) &
+  theme(
+    text = element_text(family = "Times New Roman"),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12)
+  )
 
-#HP_UB
-hp_ub_values <- seq(min(rsf_modified_2022_23$HP_UB, na.rm = TRUE), 
-                 max(rsf_modified_2022_23$HP_UB, na.rm = TRUE), 
-                 length.out = 1000)
+final_faceted_plot + 
+  plot_annotation(
+    x = "Distance (original scale)",  # Add x-axis title
+    y = "Probability of selection"   # Add y-axis title
+  )
 
-hp_ub_df <- data.frame(
-  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(hp_ub_values)),
-  WFP_FF = rep(mean(rsf_modified_2022_23$WFP_FF), length(hp_ub_values)),
-  FL = rep(mean(rsf_modified_2022_23$FL), length(hp_ub_values)),
-  AG = rep(mean(rsf_modified_2022_23$AG), length(hp_ub_values)),
-  HP_UB= hp_ub_values,
-  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(hp_ub_values)),
-  HW = rep(mean(rsf_modified_2022_23$HW), length(hp_ub_values)),
-  NP_UB = rep(mean(rsf_modified_2022_23$NP_UB), length(hp_ub_values)),
-  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(hp_ub_values)),
-  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(hp_ub_values)),
-  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(hp_ub_values)),
-  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(hp_ub_values)),
-  UM = rep(mean(rsf_modified_2022_23$UM), length(hp_ub_values)),
-  band_numb = sample(rsf_modified_2022_23$band_numb, size = length(hp_ub_values), replace = TRUE)
-)
-
-
-hp_ub_pred_draws <- epred_draws(newdata = hp_ub_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(1|band_numb))
-
-hp_ub_pred_draws_sum <- hp_ub_pred_draws %>%
-  group_by(HP_UB) %>%
-  summarize(mean_fit = mean(.prediction),
-            low_ci = quantile(.prediction, 0.025),
-            upper_ci = quantile(.prediction, 0.975))
-
-summary(hp_ub_pred_draws)
-
-hp_ub_pred_draws_sum%>% 
-  ggplot(aes(HP_UB, mean_fit)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "brown", alpha = 0.4) +
-  labs(x = "Distance to HP_BU (centered and scaled)", 
-       y = "Probability of selection") +
-  theme_bw() +
-  theme(panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        #panel.background = element_rect(fill = "white"),
-        axis.line=element_line("black"),
-        axis.ticks=element_line("black"),
-        axis.text.x = element_text(colour="black",size=12),
-        axis.title.y=element_text(colour="black",size=12),
-        axis.title.x=element_text(colour="black",size=12),
-        legend.title = element_text(colour="black",size=12),
-        legend.text = element_text(colour="black",size=12),
-        axis.text.y = element_text(colour="black",size=12))
-
-
-
-#NP_UB
-np_ub_values <- seq(min(rsf_modified_2022_23$NP_UB, na.rm = TRUE), 
-                 max(rsf_modified_2022_23$NP_UB, na.rm = TRUE), 
-                 length.out = 1000)
-
-np_ub_df <- data.frame(
-  NP_BU = rep(mean(rsf_modified_2022_23$NP_BU), length(np_ub_values)),
-    WFP_FF = rep(mean(rsf_modified_2022_23$WFP_FF), length(np_ub_values)),
-  FL = rep(mean(rsf_modified_2022_23$FL), length(np_ub_values)),
-  AG = rep(mean(rsf_modified_2022_23$AG), length(np_ub_values)),
-  HP_BU = rep(mean(rsf_modified_2022_23$HP_BU), length(np_ub_values)),
-  HP_UB = rep(mean(rsf_modified_2022_23$HP_UB), length(np_ub_values)),
-  HW = rep(mean(rsf_modified_2022_23$HW), length(np_ub_values)),
-  NP_UB = np_ub_values,
-  PP_BU = rep(mean(rsf_modified_2022_23$PP_BU), length(np_ub_values)),
-  PP_UB = rep(mean(rsf_modified_2022_23$PP_UB), length(np_ub_values)),
-  SS_BU = rep(mean(rsf_modified_2022_23$SS_BU), length(np_ub_values)),
-  SS_UB = rep(mean(rsf_modified_2022_23$SS_UB), length(np_ub_values)),
-  UM = rep(mean(rsf_modified_2022_23$UM), length(np_ub_values)),
-  band_numb = sample(rsf_modified_2022_23$band_numb, size = length(np_ub_values), replace = TRUE)
-)
-
-
-np_ub_pred_draws <- epred_draws(newdata = np_ub_df, object = pred_model, value = ".prediction", seed = 123, ndraws = 10000, re_formula = ~(1|band_numb))
-
-np_ub_pred_draws_sum <- np_ub_pred_draws %>%
-  group_by(NP_UB) %>%
-  summarize(mean_fit = mean(.prediction),
-            low_ci = quantile(.prediction, 0.025),
-            upper_ci = quantile(.prediction, 0.975))
-
-summary(np_ub_pred_draws)
-
-np_ub_pred_draws_sum%>% 
-  ggplot(aes(NP_UB, mean_fit)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "#006400", alpha = 0.4) +
-  labs(x = "Distance to NP_UB (centered and scaled)", 
-       y = "Probability of selection") +
-  theme_bw() +
-  theme(panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        #panel.background = element_rect(fill = "white"),
-        axis.line=element_line("black"),
-        axis.ticks=element_line("black"),
-        axis.text.x = element_text(colour="black",size=12),
-        axis.title.y=element_text(colour="black",size=12),
-        axis.title.x=element_text(colour="black",size=12),
-        legend.title = element_text(colour="black",size=12),
-        legend.text = element_text(colour="black",size=12),
-        axis.text.y = element_text(colour="black",size=12))
 
 
 
