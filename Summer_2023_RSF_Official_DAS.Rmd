@@ -1681,11 +1681,11 @@ fl_pred_draws_sum <- fl_pred_draws_sum %>%
 FL_og <- fl_pred_draws_sum %>%
   ggplot(aes(FL_original, mean_fit)) +
   geom_line() +
-  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "black", alpha = 0.4) +
+  geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "black", alpha = 0.6) +
   labs(title = "Feed line", x = NULL, y = NULL) +
   theme_bw() +
   scale_x_continuous(breaks = c(0, 400, 800)) +
-  scale_y_continuous(breaks = c(0.05, 0.1, 0.15), limits = c(0, 0.15)) +
+  scale_y_continuous(breaks = c(0.05, 0.1, 0.15), limits = c(0.025, 0.15)) +
  theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
@@ -1753,7 +1753,7 @@ np_bu_pred_draws_sum %>%
 # Reverse centering and scaling np_bu
 np_bu_pred_draws_sum <- np_bu_pred_draws_sum %>%
   mutate(
-    NP_BU_original = (NP_BU * 97.47) + 80.74  # Transform scaled to original
+    NP_BU_original = (NP_BU * 97.75) + 81.44  # Transform scaled to original
   )
 
 # Plot using the original x-axis values
@@ -1764,7 +1764,7 @@ NP_BU_og <- np_bu_pred_draws_sum %>%
   labs(title = "Natural pine (B)", x = NULL, y = NULL) +
   theme_bw() +
   scale_x_continuous(breaks = c(0, 400, 800)) +
-  scale_y_continuous(breaks = c(0.05, 0.1, 0.15), limits = c(0, 0.15), labels = NULL) +
+   scale_y_continuous(breaks = c(0.05, 0.1, 0.15), limits = c(0.025, 0.15), labels = NULL) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
@@ -1847,6 +1847,7 @@ SS_UB_og <- ss_ub_pred_draws_sum %>%
   labs(title = "Shrub/scrub (U)", x = NULL, y = NULL) +
   theme_bw() +
   scale_x_continuous(breaks = c(0, 400, 800)) +
+   scale_y_continuous(breaks = c(0.05, 0.1, 0.15), limits = c(0.025, 0.15), labels = NULL) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
@@ -1925,6 +1926,7 @@ HP_UB_og <- hp_ub_pred_draws_sum %>%
   labs(title = "Hardwood/pine (U)", x = NULL, y = NULL) +
   theme_bw() +
   scale_x_continuous(breaks = c(0, 400, 800)) +
+   scale_y_continuous(breaks = c(0.05, 0.1, 0.15), limits = c(0.025, 0.15), labels = NULL) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
@@ -2005,7 +2007,8 @@ NP_UB_og <- np_ub_pred_draws_sum %>%
   geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "#006400", alpha = 0.4) +
   labs(title = "Natural pine (U)", x = NULL, y = NULL) +
   theme_bw() +
-   scale_x_continuous(breaks = c(0, 250, 500)) +
+   scale_x_continuous(breaks = c(0, 250, 500), limits = c(-0.9, 500)) +
+    scale_y_continuous(breaks = c(0.05, 0.1, 0.15, 0.2), limits = c(0.05, 0.2)) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
@@ -2088,6 +2091,7 @@ SS_BU_og <- ss_bu_pred_draws_sum %>%
   labs(title = "Shrub/scrub (B)", x = NULL, y = NULL) +
   theme_bw() +
    scale_x_continuous(breaks = c(0, 500, 1000)) +
+    scale_y_continuous(breaks = c(0.05, 0.1, 0.15, 0.2), limits = c(0.05, 0.2), labels = NULL) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
@@ -2169,6 +2173,7 @@ HP_BU_og <- hp_bu_pred_draws_sum %>%
   labs(title = "Hardwood/pine (B)", x = NULL, y = NULL) +
   theme_bw() +
    scale_x_continuous(breaks = c(0, 600, 1200)) +
+    scale_y_continuous(breaks = c(0.05, 0.1, 0.15, 0.2), limits = c(0.05, 0.2), labels = NULL) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
@@ -2196,11 +2201,7 @@ final_faceted_plot <- (FL_og + NP_BU_og + SS_UB_og + HP_UB_og +
     axis.title.y = element_text(size = 12)
   )
 
-final_faceted_plot + 
-  plot_annotation(
-    x = "Distance (original scale)",  # Add x-axis title
-    y = "Probability of selection"   # Add y-axis title
-  )
+ 
 
 
 
